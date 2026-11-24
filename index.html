@@ -281,6 +281,7 @@ async function handleFiles(files){
   }
   for(const s of Object.values(slates)) if(s.site=='FD') await resolveFD(s);
   save(); render();
+  if(LS.get('autoSchedule', false)) scheduleAlerts(true);
 }
 
 // ---------- events ----------
@@ -387,17 +388,19 @@ async function ntfy(topic, title, body, atSec){
   const r = await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}?${p}`, {method:'POST', body});
   if(!r.ok) throw new Error('ntfy '+r.status);
 }
-async function scheduleAlerts(){
+// ntfy.sh holds scheduled messages for at most 3 days, so alerts further out are
+// scheduled later: the page tops them up each time it is opened or files are added.
+const MAX_DELAY = 3*86400e3 - 30*60e3;
+async function scheduleAlerts(auto){
   const topic = document.getElementById('topic').value.trim();
   const lead = Math.max(1, +document.getElementById('lead').value || 25);
-  if(!topic){ log('Enter your ntfy topic first.'); return; }
-  LS.set('topic', topic); LS.set('lead', lead);
+  if(!topic){ if(!auto) log('Enter your ntfy topic first.'); return; }
+  LS.set('topic', topic); LS.set('lead', lead); LS.set('autoSchedule', true);
   const sent = LS.get('sent', {});
   const now = Date.now();
-  // one alert per time and kind: "Lock" and "Late Swap" are sent separately
   // one alert per time, sectioned by sport, First Locks before Late Swaps
   const byT = {}; for(const e of allEvents()) if(e.t>now) (byT[e.t] ||= []).push(e);
-  let n=0, skipped=0;
+  let n=0, skipped=0, later=0;
   for(const [t,es] of Object.entries(byT)){
     es.sort(bySportKind);
     const kinds = [...new Set(es.map(kindLabel))];
@@ -405,6 +408,7 @@ async function scheduleAlerts(){
     const id = topic+'|'+lead+'|'+t+'|grouped|'+es.map(e=>e.slate.key).sort().join(';');
     if(sent[id]){ skipped++; continue; }
     const sendAt = +t - lead*60e3;
+    if(sendAt - now > MAX_DELAY){ later++; continue; }
     const title = `${kind} at ${fmtTime(+t)} ET`;
     const lines = []; let lastSport = '', lastKind = '';
     for(const e of es){
@@ -420,7 +424,9 @@ async function scheduleAlerts(){
   }
   for(const [k,v] of Object.entries(sent)) if(v < now - 3*86400e3) delete sent[k];
   LS.set('sent', sent);
-  log(`Scheduled ${n} alert${n==1?'':'s'} (${lead} min before each lock)${skipped?`, ${skipped} already scheduled`:''}.`);
+  if(auto && !n) return;
+  log(`Scheduled ${n} alert${n==1?'':'s'} (${lead} min before each lock)${skipped?`, ${skipped} already scheduled`:''}.` +
+      (later ? ` ${later} more ${later==1?'is':'are'} over 3 days out and will be scheduled when you open this page closer to then.` : ''));
 }
 
 // ---------- wiring ----------
@@ -432,7 +438,7 @@ drop.ondragleave = ()=>drop.classList.remove('over');
 drop.ondrop = e=>{ e.preventDefault(); drop.classList.remove('over'); handleFiles([...e.dataTransfer.files]); };
 document.getElementById('topic').value = LS.get('topic','');
 document.getElementById('lead').value = LS.get('lead',25);
-document.getElementById('schedule').onclick = scheduleAlerts;
+document.getElementById('schedule').onclick = ()=>scheduleAlerts(false);
 document.getElementById('test').onclick = async ()=>{
   const topic=document.getElementById('topic').value.trim(); if(!topic) return log('Enter your ntfy topic first.');
   LS.set('topic', topic);
@@ -444,6 +450,7 @@ render();
   const todo = Object.values(slates).filter(x=>x.site=='FD' && x.games.some(g=>!g.ms && !g.started));
   for(const x of todo) await resolveFD(x);
   if(todo.length){ save(); render(); }
+  if(LS.get('autoSchedule', false)) scheduleAlerts(true);
 })();
 </script>
 </body>
