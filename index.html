@@ -160,11 +160,14 @@ function parseDK(rows, fname){
   // player pool
   let gi=-1, hdrRow=-1;
   rows.forEach((r,ri)=>{ if(gi<0){ const j=r.indexOf('Game Info'); if(j>=0){gi=j;hdrRow=ri} } });
+  const ti = hdrRow>=0 ? rows[hdrRow].indexOf('TeamAbbrev') : -1;
   const games = {};
   if(gi>=0) for(const r of rows.slice(hdrRow+1)){
     const v=(r[gi]||'').trim(); if(!v) continue;
     const m = v.match(/^(.*?)\s*(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-    if(!m) { games['started|'+v] ||= {label:v, ms:null, started:true, count:0}; games['started|'+v].count++; continue; }
+    if(!m) { games['started|'+v] ||= {label:v, ms:null, started:true, count:0}; games['started|'+v].count++;
+      if(ti>=0 && r[ti]) (games['started|'+v].teams ||= []).includes(r[ti]) || games['started|'+v].teams.push(r[ti]);
+      continue; }
     let label=m[1].trim(); let hr=+m[5]%12; if(m[7].toUpperCase()=='PM') hr+=12;
     const ms = etToMs(+m[4],+m[2],+m[3],hr,+m[6]);
     const key = label+'|'+ms;
@@ -320,7 +323,7 @@ function render(){
     const entries = s.contests.reduce((n,c)=>n+c.entries,0);
     d.innerHTML = `<div class="slate-h"><div><span class="pill ${s.site}">${s.site=='DK'?'DraftKings':'FanDuel'}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <strong>${slateDetail(s)}</strong> <span class="muted small">${s.games.some(g=>g.started)?'Underway':(ev[0]?fmtDay(ev[0].t):'')} · ${entries} entries</span></div><button class="x" title="Remove">✕</button></div>`;
     const t = document.createElement('table');
-    t.innerHTML = '<tr><th>Start</th><th>Games</th><th></th></tr>' + s.games.filter(g=>g.started).map(g=>`<tr class="past"><td class="t">Earlier</td><td>${g.label=='Final'?'Game(s) already played':g.label}</td><td class="tag">Locked</td></tr>`).join('') + ev.map(e=>`<tr class="${e.t<now?'past':''} ${e.t==nextT?'next':''}"><td class="t">${when(e.t)}</td><td>${e.games.join(', ')}</td><td class="tag ${e.kind}">${kindLabel(e)}</td></tr>`).join('');
+    t.innerHTML = '<tr><th>Start</th><th>Games</th><th></th></tr>' + s.games.filter(g=>g.started).map(g=>`<tr class="past"><td class="t">Earlier</td><td>${g.teams?.length ? g.teams.join(', ')+` <span class="muted small">(${g.label.toLowerCase()})</span>` : 'Game(s) already played'}</td><td class="tag">Locked</td></tr>`).join('') + ev.map(e=>`<tr class="${e.t<now?'past':''} ${e.t==nextT?'next':''}"><td class="t">${when(e.t)}</td><td>${e.games.join(', ')}</td><td class="tag ${e.kind}">${kindLabel(e)}</td></tr>`).join('');
     const missing = s.games.filter(g=>!g.ms && !g.started);
     for(const g of missing){
       const tr=document.createElement('tr');
