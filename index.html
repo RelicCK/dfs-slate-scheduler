@@ -325,7 +325,7 @@ function render(){
   const nextT = ev.find(e=>e.t>now)?.t;
   let lastDay = '';
   tl.innerHTML = Object.entries(byT).sort((a,b)=>a[0]-b[0]).map(([t,es])=>{
-    const day = fmtDay(+t); const hdr = day!==lastDay ? `<tr><th colspan="2">${etDateKey(+t)==todayKey()?'Today, ':''}${day}</th></tr>` : ''; lastDay = day;
+    const day = fmtDay(+t); const hdr = day!==lastDay ? `<tr><th colspan="2">${etDateKey(+t)==todayKey()?'Today, ':(etDateKey(+t)==etDateKey(Date.now()+864e5)?'Tomorrow, ':'')}${day}</th></tr>` : ''; lastDay = day;
     return hdr + `<tr class="${+t<now?'past':''} ${+t==nextT?'next':''}"><td class="t">${fmtTime(+t)}</td><td>${es.map(e=>`<span class="pill ${e.slate.site}">${e.slate.site}</span> ${e.slate.sport} ${e.slate.type} <span class="muted">${slateDetail(e.slate)}</span> <span class="tag ${e.kind}">${kindLabel(e)}</span>`).join('<br>')}</td></tr>`;
   }).join('');
   tick();
