@@ -81,6 +81,24 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px}
   .gtick{top:2px;width:14px;height:14px;margin-left:-7px}
   .gbar{top:5px}
 }
+.slate{padding:12px 14px}
+.slate.soon{border-color:var(--warn);box-shadow:inset 3px 0 0 var(--warn)}
+.slate.done{opacity:.6}
+.slate .slate-h{flex-wrap:nowrap;align-items:flex-start}
+.sh-title{line-height:1.6;flex:1;min-width:0}
+.actbar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;font-size:14px}
+.act{font-weight:700}
+.act.first{color:var(--warn)}
+.cd{font-weight:600;background:var(--soft);border-radius:6px;padding:1px 6px;font-variant-numeric:tabular-nums}
+.soon .cd{background:var(--warn);color:#fff}
+.open{font-size:13px;color:var(--accent);text-decoration:none;white-space:nowrap}
+table.sched{table-layout:fixed;margin-top:6px}
+table.sched col.c1{width:112px}
+table.sched col.c3{width:84px}
+table.sched td{padding:5px 4px}
+table.sched td:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#slates details{margin-top:6px}
+@media (max-width:480px){table.sched col.c1{width:92px}table.sched col.c3{width:76px}}
 </style>
 </head>
 <body>
@@ -142,6 +160,7 @@ function etToMs(y,m,d,h,mi){
   }
   return guess;
 }
+const inStr = ms => { const m=Math.max(0,Math.round(ms/60000)); return 'in '+(m<60 ? m+'m' : m<1440 ? Math.floor(m/60)+'h '+(m%60)+'m' : Math.floor(m/1440)+'d '+Math.floor(m%1440/60)+'h'); };
 const fmtTime = ms => new Date(ms).toLocaleTimeString('en-US',{timeZone:TZ,hour:'numeric',minute:'2-digit'});
 const fmtDay = ms => new Date(ms).toLocaleDateString('en-US',{timeZone:TZ,weekday:'short',month:'short',day:'numeric'});
 const etDateKey = ms => {const p=etParts(new Date(ms));return `${p.y}-${String(p.m).padStart(2,'0')}-${String(p.d).padStart(2,'0')}`};
@@ -377,18 +396,33 @@ const kindLabel = e => e.kind=='first' ? 'First Lock' : 'Late Swap';
 function render(){
   prune();
   const el = document.getElementById('slates'); el.innerHTML='';
-  const startKey = x => x.games.some(g=>g.started) ? 0 : (slateEvents(x)[0]?.t||0); // slates already underway first
-  const list = Object.values(slates).sort((a,b)=>startKey(a)-startKey(b));
   const now = Date.now();
+  // sort by the next thing you need to do; finished slates last
+  const nextOf = x => slateEvents(x).find(e=>e.t>now)?.t ?? 9e15;
+  const list = Object.values(slates).sort((a,b)=>nextOf(a)-nextOf(b));
   for(const s of list){
-    const ev = slateEvents(s); const nextT = ev.find(e=>e.t>now)?.t;
+    const ev = slateEvents(s); const next = ev.find(e=>e.t>now); const nextT = next?.t;
     const multiDay = new Set(ev.map(e=>etDateKey(e.t))).size > 1 || s.games.some(g=>g.started);
-    const when = t => multiDay ? new Date(t).toLocaleDateString('en-US',{timeZone:TZ,weekday:'short'})+' '+fmtTime(t) : fmtTime(t);
-    const d = document.createElement('div'); d.className='card';
+    const when = t => (multiDay || etDateKey(t)!=todayKey()) ? new Date(t).toLocaleDateString('en-US',{timeZone:TZ,weekday:'short'})+' '+fmtTime(t) : fmtTime(t);
+    const soon = next && next.t-now < 3600e3;
+    const d = document.createElement('div'); d.className='card slate'+(soon?' soon':'')+(next?'':' done');
     const entries = s.contests.reduce((n,c)=>n+c.entries,0);
-    d.innerHTML = `<div class="slate-h"><div><span class="pill ${s.site}">${s.site=='DK'?'DraftKings':'FanDuel'}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <strong>${slateDetail(s)}</strong> <span class="muted small">${s.games.some(g=>g.started)?'Underway':(ev[0]?fmtDay(ev[0].t):'')} · ${entries} entries</span></div><button class="x" title="Remove">✕</button></div>`;
-    const t = document.createElement('table');
-    t.innerHTML = '<tr><th>Start</th><th>Games</th><th></th></tr>' + s.games.filter(g=>g.started).map(g=>`<tr class="past"><td class="t">Earlier</td><td>${g.teams?.length ? g.teams.join(', ')+` <span class="muted small">(${g.label.toLowerCase()})</span>` : (guessPlayed(s) || 'Game(s) already played')}</td><td class="tag">Locked</td></tr>`).join('') + ev.map(e=>`<tr class="${e.t<now?'past':''} ${e.t==nextT?'next':''}"><td class="t">${when(e.t)}</td><td>${e.games.join(', ')}</td><td class="tag ${e.kind}">${kindLabel(e)}</td></tr>`).join('');
+    const link = s.site=='DK' ? 'https://www.draftkings.com/mycontests' : 'https://www.fanduel.com/upcoming';
+    const action = next
+      ? `<span class="act ${next.kind}">${kindLabel(next)} ${when(next.t)}</span> <span class="cd">${inStr(next.t-now)}</span>${next.games.length && s.games.length>1 && ev.length>1 ? ` <span class="muted">· ${next.games.join(', ')}</span>`:''}`
+      : `<span class="muted">All games started</span>`;
+    d.innerHTML = `<div class="slate-h"><div class="sh-title"><span class="pill ${s.site}">${s.site}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <strong>${slateDetail(s)}</strong></div><button class="x" title="Remove">✕</button></div>
+      <div class="actbar"><div>${action}</div><a class="open" href="${link}" target="_blank" rel="noopener">Open ${s.site} ↗</a></div>`;
+    const t = document.createElement('table'); t.className='sched';
+    t.innerHTML = '<colgroup><col class="c1"><col><col class="c3"></colgroup>';
+    // rows: collapse everything already locked into one line, show what's left
+    const pastEv = ev.filter(e=>e.t<=now), futEv = ev.filter(e=>e.t>now);
+    const startedN = s.games.filter(g=>g.started).length;
+    const pastGames = [...s.games.filter(g=>g.started).map(g=>g.teams?.length ? g.teams.join('/') : (guessPlayed(s).replace(/<[^>]+>.*$/,'').trim() || 'earlier game')), ...pastEv.flatMap(e=>e.games)];
+    let rows = '';
+    if(pastGames.length) rows += `<tr class="past"><td class="t">Locked</td><td>${pastGames.join(', ')}</td><td></td></tr>`;
+    if(ev.length > 1 || pastGames.length) rows += futEv.map(e=>`<tr class="${e.t==nextT?'next':''}"><td class="t">${when(e.t)}</td><td>${e.games.join(', ')}</td><td class="tag ${e.kind}">${kindLabel(e)}</td></tr>`).join('');
+    t.innerHTML += rows;
     const missing = s.games.filter(g=>!g.ms && !g.started);
     for(const g of missing){
       const tr=document.createElement('tr');
@@ -400,9 +434,9 @@ function render(){
       };
       t.appendChild(tr);
     }
-    d.appendChild(t);
+    if(t.rows.length) d.appendChild(t);
     const det = document.createElement('details');
-    det.innerHTML = `<summary>${s.contests.length} contest${s.contests.length==1?'':'s'}</summary><div class="small">${s.contests.map(c=>`${c.name} · ${c.fee} × ${c.entries}`).join('<br>')}</div>` +
+    det.innerHTML = `<summary>${entries} entries · ${s.contests.length} contest${s.contests.length==1?'':'s'}</summary><div class="small">${s.contests.map(c=>`${c.name} · ${c.fee} × ${c.entries}`).join('<br>')}</div>` +
       (s.site=='FD' ? `<div class="small muted" style="margin-top:4px">Times from: ${[...new Set(s.games.map(g=>g.src).filter(Boolean))].join(', ')||'none'}</div>`:'');
     d.appendChild(det);
     d.querySelector('.x').onclick = ()=>{ delete slates[s.key]; save(); render(); changed(); };
