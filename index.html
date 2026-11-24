@@ -123,6 +123,7 @@ table.sched td:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:n
       <button id="test">Send test</button>
       <button id="syncNow">Sync now</button>
       <button id="clear">Clear slates</button>
+      <button id="newTopic" title="Start fresh on a new topic; alerts already scheduled on the old one can't be cancelled">New topic</button>
     </div>
     <label class="row" style="margin-top:8px"><input type="checkbox" id="desk"> Desktop alerts with sound on this device <span class="small muted">(while this page is open)</span></label>
     <div class="row" style="margin-top:6px"><label>Sound <select id="sound"><option value="chime">Chime</option><option value="bell">Bell</option><option value="ding">Ding-dong</option><option value="alarm">Alarm</option><option value="pulse">Rising pulse</option><option value="ping">Soft ping</option><option value="none">No sound</option></select></label>
@@ -551,7 +552,7 @@ async function pushSync(){
   const t = syncTopic(); if(!t) return;
   if(!LS.get('changedAt',0)) LS.set('changedAt', Date.now());
   try{
-    const body = await pack({v:1, at:LS.get('changedAt',0), slates:slimSlates()});
+    const body = await pack({v:1, at:LS.get('changedAt',0), slates:slimSlates(), sent:sentMap()});
     const r = await fetch(`https://ntfy.sh/${encodeURIComponent(t)}?priority=1`, {method:'POST', body});
     if(r.ok){ LS.set('pushedAt', Date.now()); { const n=Object.keys(slates).length; syncStatus(`shared ${n} slate${n==1?"":"s"} at ${nowStr()}.`); }; }
     else syncStatus(`sharing failed (ntfy ${r.status}).`, true);
@@ -564,7 +565,9 @@ async function pullSync(force){
     const txt = await (await fetch(`https://ntfy.sh/${encodeURIComponent(t)}/json?poll=1&since=24h`)).text();
     const msgs = txt.split('\n').filter(Boolean).map(l=>JSON.parse(l)).filter(m=>m.event=='message' && m.message);
     let best=null;
-    for(const m of msgs){ try{ const d=await unpack(m.message); if(d.v==1 && (!best || d.at>best.at)) best=d; }catch(e){} }
+    const sent = sentMap();
+    for(const m of msgs){ try{ const d=await unpack(m.message); if(d.v==1 && (!best || d.at>best.at)) best=d; if(d.sent) Object.assign(sent, d.sent); }catch(e){} }
+    LS.set('sent2', sent);
     const local = LS.get('changedAt',0), haveLocal = Object.keys(slates).length>0;
     if(best && (best.at > local || (!haveLocal && best.slates.length))){
       slates = Object.fromEntries(best.slates.map(x=>[x.key,x])); LS.set('changedAt', best.at);
@@ -585,22 +588,30 @@ async function ntfy(topic, title, body, atSec){
 // ntfy.sh holds scheduled messages for at most 3 days, so alerts further out are
 // scheduled later: the page tops them up each time it is opened or files are added.
 const MAX_DELAY = 3*86400e3 - 30*60e3;
+// sent alerts: "topic|lockTime|slateKey" -> when sent. Upgrades the older per-group records.
+function sentMap(){
+  const m = LS.get('sent2', null); if(m) return m;
+  const out = {};
+  for(const [id,v] of Object.entries(LS.get('sent', {}))){ const p=id.split('|'); for(const k of p[p.length-1].split(';')) out[p[0]+'|'+p[2]+'|'+k]=v; }
+  LS.set('sent2', out); return out;
+}
 async function scheduleAlerts(auto){
   const topic = document.getElementById('topic').value.trim();
   const lead = Math.max(1, +document.getElementById('lead').value || 25);
   if(!topic){ if(!auto) log('Enter your ntfy topic first.'); return; }
   LS.set('topic', topic); LS.set('lead', lead); LS.set('autoSchedule', true);
-  const sent = LS.get('sent', {});
+  const sent = sentMap();
   const now = Date.now();
   // one alert per time, sectioned by sport, First Locks before Late Swaps
   const byT = {}; for(const e of allEvents()) if(e.t>now) (byT[e.t] ||= []).push(e);
   let n=0, skipped=0, later=0;
-  for(const [t,es] of Object.entries(byT)){
+  for(let [t,es] of Object.entries(byT)){
+    // never alert the same slate twice for the same time, even if the format, lead time or device changes
+    es = es.filter(e=>!sent[topic+'|'+t+'|'+e.slate.key]);
+    if(!es.length){ skipped++; continue; }
     es.sort(bySportKind);
     const kinds = [...new Set(es.map(kindLabel))];
     const kind = kinds.join(' + ');
-    const id = topic+'|'+lead+'|'+t+'|grouped|'+es.map(e=>e.slate.key).sort().join(';');
-    if(sent[id]){ skipped++; continue; }
     const sendAt = +t - lead*60e3;
     if(sendAt - now > MAX_DELAY){ later++; continue; }
     const title = `${kind} at ${fmtTime(+t)} ET`;
@@ -613,11 +624,12 @@ async function scheduleAlerts(auto){
     const body = lines.join('\n');
     try{
       await ntfy(topic, title, body, sendAt > now + 15e3 ? Math.floor(sendAt/1000) : null);
-      sent[id] = Date.now(); n++;
+      for(const e of es) sent[topic+'|'+t+'|'+e.slate.key] = Date.now(); n++;
     }catch(err){ log('Failed to schedule '+title+': '+err.message); }
   }
-  for(const [k,v] of Object.entries(sent)) if(v < now - 3*86400e3) delete sent[k];
-  LS.set('sent', sent);
+  for(const [k,v] of Object.entries(sent)) if(v < now - 4*86400e3) delete sent[k];
+  LS.set('sent2', sent);
+  if(n) pushSync(); // tell your other devices what's already scheduled
   if(auto && !n) return;
   log(`Scheduled ${n} alert${n==1?'':'s'} (${lead} min before each lock)${skipped?`, ${skipped} already scheduled`:''}.` +
       (later ? ` ${later} more ${later==1?'is':'are'} over 3 days out and will be scheduled when you open this page closer to then.` : ''));
@@ -707,6 +719,12 @@ document.getElementById('test').onclick = async ()=>{
   const topic=document.getElementById('topic').value.trim(); if(!topic) return log('Enter your ntfy topic first.');
   LS.set('topic', topic);
   try{ await ntfy(topic,'Slate alerts connected','Test from your slate schedule page.'); log('Test sent.'); }catch(e){ log('Test failed: '+e.message); }
+};
+document.getElementById('newTopic').onclick = ()=>{
+  const t = 'slates-' + Array.from(crypto.getRandomValues(new Uint8Array(6)),b=>b.toString(36).padStart(2,'0')).join('').slice(0,10);
+  document.getElementById('topic').value = t; LS.set('topic', t); LS.set('sent2', {}); LS.set('pushedAt', 0);
+  log(`New topic: ${t}. In the ntfy app, unsubscribe from the old topic and subscribe to this one, then enter it on your other devices. Then tap Schedule alerts.`);
+  pushSync(); startDesk();
 };
 document.getElementById('syncNow').onclick = ()=>pullSync(true);
 document.getElementById('clear').onclick = ()=>{ slates={}; save(); render(); changed(); };
