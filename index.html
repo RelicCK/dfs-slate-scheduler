@@ -213,23 +213,26 @@ function parseFD(rows, fname){
 // ---------- FanDuel start-time lookup ----------
 const espnCache = {};
 function addDays(date, n){ const [y,m,d]=date.split('-').map(Number); const t=new Date(Date.UTC(y,m-1,d+n)); return t.toISOString().slice(0,10); }
-async function espnGames(sport, date){
-  const path = ESPN[sport]; if(!path) return [];
-  const k = sport+date; if(espnCache[k]) return espnCache[k];
-  const [league, extra] = path.split('?');
-  // Slates can span several days (e.g. NFL Mon-Thu), so look a few days ahead
-  const span = /football/.test(league) ? 6 : 2;
-  const range = date.replace(/-/g,'') + '-' + addDays(date, span).replace(/-/g,'');
-  const url = `https://site.api.espn.com/apis/site/v2/sports/${league}/scoreboard?${extra?extra+'&':''}dates=${range}&limit=1000`;
+async function espnDay(league, extra, day){
+  const k = league+day; if(espnCache[k]) return espnCache[k];
+  const url = `https://site.api.espn.com/apis/site/v2/sports/${league}/scoreboard?${extra?extra+'&':''}dates=${day.replace(/-/g,'')}&limit=500`;
   try{
     const j = await (await fetch(url)).json();
     espnCache[k] = (j.events||[]).map(e=>{
       const comp=e.competitions?.[0]; const t=comp?.competitors||[];
       const away=t.find(x=>x.homeAway=='away')?.team?.abbreviation, home=t.find(x=>x.homeAway=='home')?.team?.abbreviation;
-      return {away, home, ms:Date.parse(e.date)};
+      return {away, home, ms:Date.parse(comp?.date||e.date)};
     });
-  }catch(e){ espnCache[k]=[]; log('Could not reach ESPN for '+sport+' times: '+e.message); }
+  }catch(e){ log(`Could not reach ESPN for ${league} ${day}: ${e.message}`); return []; }
   return espnCache[k];
+}
+// Slates can span several days (e.g. NFL Mon-Thu), so fetch each day from the slate date forward
+async function espnGames(sport, date){
+  const path = ESPN[sport]; if(!path) return [];
+  const [league, extra] = path.split('?');
+  const span = /football/.test(league) ? 6 : 1;
+  const days = Array.from({length:span+1}, (_,i)=>addDays(date,i));
+  return (await Promise.all(days.map(d=>espnDay(league, extra, d)))).flat();
 }
 function matchGame(g, pool){
   const a=norm(g.away), h=norm(g.home);
@@ -410,6 +413,11 @@ document.getElementById('test').onclick = async ()=>{
 };
 document.getElementById('clear').onclick = ()=>{ slates={}; save(); render(); };
 render();
+(async()=>{
+  const todo = Object.values(slates).filter(x=>x.site=='FD' && x.games.some(g=>!g.ms && !g.started));
+  for(const x of todo) await resolveFD(x);
+  if(todo.length){ save(); render(); }
+})();
 </script>
 </body>
 </html>
