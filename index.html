@@ -297,6 +297,16 @@ function slateDetail(s){
   const win = ts.length ? (lo==hi ? fmtTime(lo) : `${f(lo)}–${f(hi)}`) : '';
   return `${g} games${win?' · '+win:''}${extra}`;
 }
+// DK lists finished games only as "Final"; borrow matchups from other loaded slates of the same sport
+// that started within the 4 days before this slate's next game
+function guessPlayed(s){
+  const live = s.games.filter(g=>g.ms).map(g=>g.ms); if(!live.length) return '';
+  const first = Math.min(...live), now = Date.now(), seen = new Set(s.games.map(g=>g.label));
+  const found = new Set();
+  for(const o of Object.values(slates)) if(o!==s && o.sport==s.sport) for(const g of o.games)
+    if(g.ms && g.ms<now && g.ms<first && g.ms>first-4*86400e3 && !seen.has(g.label)) found.add(g.label);
+  return found.size ? [...found].join(', ')+' <span class="muted small">(from your other slates)</span>' : '';
+}
 function slateName(s){ return `${s.site} ${s.sport} ${s.type} · ${slateDetail(s)}`; }
 function slateEvents(s){
   const byT = {};
@@ -323,7 +333,7 @@ function render(){
     const entries = s.contests.reduce((n,c)=>n+c.entries,0);
     d.innerHTML = `<div class="slate-h"><div><span class="pill ${s.site}">${s.site=='DK'?'DraftKings':'FanDuel'}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <strong>${slateDetail(s)}</strong> <span class="muted small">${s.games.some(g=>g.started)?'Underway':(ev[0]?fmtDay(ev[0].t):'')} · ${entries} entries</span></div><button class="x" title="Remove">✕</button></div>`;
     const t = document.createElement('table');
-    t.innerHTML = '<tr><th>Start</th><th>Games</th><th></th></tr>' + s.games.filter(g=>g.started).map(g=>`<tr class="past"><td class="t">Earlier</td><td>${g.teams?.length ? g.teams.join(', ')+` <span class="muted small">(${g.label.toLowerCase()})</span>` : 'Game(s) already played'}</td><td class="tag">Locked</td></tr>`).join('') + ev.map(e=>`<tr class="${e.t<now?'past':''} ${e.t==nextT?'next':''}"><td class="t">${when(e.t)}</td><td>${e.games.join(', ')}</td><td class="tag ${e.kind}">${kindLabel(e)}</td></tr>`).join('');
+    t.innerHTML = '<tr><th>Start</th><th>Games</th><th></th></tr>' + s.games.filter(g=>g.started).map(g=>`<tr class="past"><td class="t">Earlier</td><td>${g.teams?.length ? g.teams.join(', ')+` <span class="muted small">(${g.label.toLowerCase()})</span>` : (guessPlayed(s) || 'Game(s) already played')}</td><td class="tag">Locked</td></tr>`).join('') + ev.map(e=>`<tr class="${e.t<now?'past':''} ${e.t==nextT?'next':''}"><td class="t">${when(e.t)}</td><td>${e.games.join(', ')}</td><td class="tag ${e.kind}">${kindLabel(e)}</td></tr>`).join('');
     const missing = s.games.filter(g=>!g.ms && !g.started);
     for(const g of missing){
       const tr=document.createElement('tr');
