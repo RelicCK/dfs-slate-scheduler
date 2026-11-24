@@ -105,6 +105,11 @@ button.chk.wide{width:auto;height:auto;padding:2px 8px;font-size:12px;color:var(
 button.chk.wide.on{color:#fff}
 tr.isdone td, .isdone{opacity:.55}
 tr.isdone td:nth-child(2), .isdone .muted{text-decoration:line-through}
+.chkpad{display:inline-block;width:24px;flex:none}
+.tle{display:flex;gap:4px;align-items:flex-start;margin:2px 0}
+.tle>button.chk{flex:none}
+#timeline button.chk{margin:1px 4px 1px 0}
+#timeline .isdone button.chk{opacity:1}
 .actr{display:flex;align-items:center;gap:10px}
 .actr button.chk{margin-right:5px}
 .okdone{color:var(--dk);font-weight:700}
@@ -482,7 +487,7 @@ function render(){
   let lastDay = '';
   tl.innerHTML = Object.entries(byT).sort((a,b)=>a[0]-b[0]).map(([t,es])=>{
     const day = fmtDay(+t); const hdr = day!==lastDay ? `<tr><th colspan="2">${etDateKey(+t)==todayKey()?'Today, ':(etDateKey(+t)==etDateKey(Date.now()+864e5)?'Tomorrow, ':'')}${day}</th></tr>` : ''; lastDay = day;
-    return hdr + `<tr class="${+t<now?'past':''} ${+t==nextT?'next':''}"><td class="t">${fmtTime(+t)}</td><td>${es.map(e=>`<span class="pill ${e.slate.site}">${e.slate.site}</span> ${e.slate.sport} ${e.slate.type} <span class="muted">${slateDetail(e.slate)}</span> <span class="tag ${e.kind}">${kindLabel(e)}</span>${+t>now?' '+doneBtn(e.slate,e.t):''}`.replace(/^/, isDone(e.slate,e.t)?'<span class="isdone">':'<span>')+'</span>').join('<br>')}</td></tr>`;
+    return hdr + `<tr class="${+t<now?'past':''} ${+t==nextT?'next':''}"><td class="t">${fmtTime(+t)}</td><td>${es.map(e=>`${+t>now?doneBtn(e.slate,e.t):'<span class="chkpad"></span>'} <span class="pill ${e.slate.site}">${e.slate.site}</span> ${e.slate.sport} ${e.slate.type} <span class="muted">${slateDetail(e.slate)}</span> <span class="tag ${e.kind}">${kindLabel(e)}</span>`.replace(/^(<button[^]*?<\/button>|<span class="chkpad"><\/span>) /, (m,c)=>`<div class="tle ${isDone(e.slate,e.t)?'isdone':''}">${c}<span>`)+'</span></div>').join('')}</td></tr>`;
   }).join('');
   renderDay();
   tick();
