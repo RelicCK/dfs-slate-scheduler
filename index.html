@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slate Lock Schedule</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#16181d;--muted:#667085;--line:#e3e6eb;--accent:#2f6fed;--dk:#53a318;--fd:#1493ff;--warn:#c4320a;--soft:#eef3ff}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b21;--ink:#e8eaee;--muted:#98a2b3;--line:#2a2f38;--accent:#6f9bff;--soft:#1d2433;--warn:#ff8a65}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 2px}
+.sub{color:var(--muted);margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+#drop{border:2px dashed var(--line);text-align:center;padding:22px 12px;cursor:pointer}
+#drop.over{border-color:var(--accent);background:var(--soft)}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+input[type=text],input[type=number],input[type=time]{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:99px;color:#fff}
+.pill.DK{background:var(--dk)}.pill.FD{background:var(--fd)}
+.pill.type{background:var(--soft);color:var(--ink)}
+table{width:100%;border-collapse:collapse;margin-top:8px}
+td,th{padding:6px 4px;border-top:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:600;border-top:none}
+td.t{white-space:nowrap;font-variant-numeric:tabular-nums;width:1%}
+.past{opacity:.45}
+.next td{background:var(--soft)}
+.tag{font-size:12px;font-weight:600}
+.tag.first{color:var(--warn)}
+.warn{color:var(--warn)}
+details summary{cursor:pointer;color:var(--muted);font-size:13px}
+#log{white-space:pre-wrap;font-size:13px;color:var(--muted);margin-top:8px}
+.slate-h{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:space-between}
+.x{border:none;background:none;color:var(--muted);padding:2px 6px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Slate Lock Schedule</h1>
+  <p class="sub">Drop in the DraftKings and FanDuel entry files you upload to Sim Savant. All times Eastern.</p>
+
+  <div class="card" id="drop">
+    <strong>Drop entry CSVs here</strong> or tap to choose files
+    <div class="small muted">DKEntries*.csv and FanDuel-*-entries-upload-template.csv, any number at once</div>
+    <input type="file" id="file" accept=".csv,text/csv" multiple hidden>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <label>ntfy topic <input type="text" id="topic" placeholder="your-secret-topic" size="18"></label>
+      <label>Alert <input type="number" id="lead" min="1" max="180" value="25" style="width:64px"> min before</label>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="primary" id="schedule">Schedule alerts</button>
+      <button id="test">Send test</button>
+      <button id="clear">Clear slates</button>
+    </div>
+    <div id="log"></div>
+  </div>
+
+  <div class="card" id="timelineCard" hidden>
+    <strong>Today's locks</strong> <span class="muted small" id="countdown"></span>
+    <table id="timeline"></table>
+  </div>
+
+  <div id="slates"></div>
+</main>
+
+<script>
+const TZ = 'America/New_York';
+const LS = {get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},
+            set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+
+// ---------- time helpers ----------
+function etParts(date){
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date).map(x=>[x.type,x.value]));
+  return {y:+p.year,m:+p.month,d:+p.day,h:+p.hour,mi:+p.minute};
+}
+// Eastern wall-clock -> epoch ms
+function etToMs(y,m,d,h,mi){
+  let guess = Date.UTC(y,m-1,d,h+5,mi);
+  for(let i=0;i<3;i++){
+    const p = etParts(new Date(guess));
+    const diff = Date.UTC(y,m-1,d,h,mi) - Date.UTC(p.y,p.m-1,p.d,p.h,p.mi);
+    if(!diff) break; guess += diff;
+  }
+  return guess;
+}
+const fmtTime = ms => new Date(ms).toLocaleTimeString('en-US',{timeZone:TZ,hour:'numeric',minute:'2-digit'});
+const fmtDay = ms => new Date(ms).toLocaleDateString('en-US',{timeZone:TZ,weekday:'short',month:'short',day:'numeric'});
+const etDateKey = ms => {const p=etParts(new Date(ms));return `${p.y}-${String(p.m).padStart(2,'0')}-${String(p.d).padStart(2,'0')}`};
+const todayKey = () => etDateKey(Date.now());
+
+// ---------- CSV ----------
+function parseCSV(text){
+  const rows=[];let row=[],f='',q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){ if(c=='"'){ if(text[i+1]=='"'){f+='"';i++} else q=false } else f+=c; }
+    else if(c=='"') q=true;
+    else if(c==','){row.push(f);f=''}
+    else if(c=='\n'||c=='\r'){ if(c=='\r'&&text[i+1]=='\n') i++; row.push(f);rows.push(row);row=[];f=''; }
+    else f+=c;
+  }
+  if(f!==''||row.length){row.push(f);rows.push(row)}
+  return rows;
+}
+
+// ---------- team normalization ----------
+const ALIAS = {WSH:'WAS',UTAH:'UTA',UTH:'UTA',PHX:'PHO',GSW:'GS',NYK:'NY',NOP:'NO',NOR:'NO',SAS:'SA',BRK:'BKN',BKN:'BKN',
+  CHW:'CWS',CHA:'CHA',KCR:'KC',SDP:'SD',SFG:'SF',TBR:'TB',TBL:'TB',WSN:'WAS',WAS:'WAS',LAK:'LA',NJD:'NJ',SJS:'SJ',
+  MTL:'MON',VGK:'VEG',VGS:'VEG',CLB:'CBJ',JAC:'JAX',LA:'LA',ARZ:'ARI',AZ:'ARI',CHI:'CHI',UTAH_HC:'UTA'};
+const norm = t => { t=(t||'').toUpperCase().replace(/[^A-Z0-9]/g,''); return ALIAS[t]||t; };
+
+const SPORTS = ['NFL','NBA','NHL','MLB','WNBA','CFB','CBB','NCAAF','NCAAB','PGA','GOLF','MMA','NAS','NASCAR','SOC','EPL','MLS','LOL','CS','TEN','F1','CFL','XFL','UFL'];
+const ESPN = {NFL:'football/nfl',NBA:'basketball/nba',NHL:'hockey/nhl',MLB:'baseball/mlb',WNBA:'basketball/wnba',
+  CFB:'football/college-football?groups=80',NCAAF:'football/college-football?groups=80',
+  CBB:'basketball/mens-college-basketball?groups=50',NCAAB:'basketball/mens-college-basketball?groups=50',
+  EPL:'soccer/eng.1',MLS:'soccer/usa.1',UFL:'football/ufl',CFL:'football/cfl'};
+function sportFrom(name){
+  const up=(name||'').toUpperCase();
+  for(const s of SPORTS) if(new RegExp('\\b'+s+'\\b').test(up)) return s;
+  return '?';
+}
+
+// ---------- state ----------
+let slates = LS.get('slates', {});   // key -> slate
+let manual = LS.get('manualTimes', {}); // gameKey -> ms
+
+function save(){ LS.set('slates', slates); LS.set('manualTimes', manual); }
+function prune(){
+  const cutoff = Date.now() - 12*3600e3;
+  for(const [k,s] of Object.entries(slates)){
+    const times = s.games.map(g=>g.ms).filter(Boolean);
+    const last = times.length ? Math.max(...times) : (s.addedAt||0);
+    if(last < cutoff) delete slates[k];
+  }
+}
+
+// ---------- parsers ----------
+function parseDK(rows, fname){
+  const h = rows[0];
+  const iId=h.indexOf('Entry ID'), iName=h.indexOf('Contest Name'), iCid=h.indexOf('Contest ID'), iFee=h.indexOf('Entry Fee');
+  let posEnd = h.indexOf('', iFee+1); if(posEnd<0) posEnd=h.length;
+  const positions = h.slice(iFee+1, posEnd);
+  const contests = {};
+  for(const r of rows.slice(1)){
+    if(!r[iId] || !/^\d+$/.test(r[iId].trim())) continue;
+    const c = contests[r[iCid]] ||= {id:r[iCid], name:r[iName], fee:r[iFee], entries:0};
+    c.entries++;
+  }
+  // player pool
+  let gi=-1, hdrRow=-1;
+  rows.forEach((r,ri)=>{ if(gi<0){ const j=r.indexOf('Game Info'); if(j>=0){gi=j;hdrRow=ri} } });
+  const games = {};
+  if(gi>=0) for(const r of rows.slice(hdrRow+1)){
+    const v=(r[gi]||'').trim(); if(!v) continue;
+    const m = v.match(/^(.*?)\s*(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if(!m) { games[v] ||= {label:v, ms:null}; continue; }
+    let label=m[1].trim(); let hr=+m[5]%12; if(m[7].toUpperCase()=='PM') hr+=12;
+    const ms = etToMs(+m[4],+m[2],+m[3],hr,+m[6]);
+    const key = label+'|'+ms;
+    if(!games[key]){
+      const [a,b] = label.includes('@') ? label.split('@') : [label,''];
+      games[key] = {label, away:a, home:b, ms, src:'DK file'};
+    }
+  }
+  const cl = Object.values(contests);
+  const sport = sportFrom(cl.map(c=>c.name).join(' '));
+  const type = positions.includes('CPT') ? 'Showdown' : (positions.some(p=>/^(TIER|T\d)/i.test(p)) ? 'Tiers' : 'Classic');
+  const gl = Object.values(games).sort((a,b)=>(a.ms||0)-(b.ms||0));
+  const key = 'DK|'+sport+'|'+type+'|'+gl.map(g=>g.label+'@'+g.ms).join(',');
+  return {key, site:'DK', sport, type, contests:cl, games:gl, positions, date: gl[0]?.ms ? etDateKey(gl[0].ms) : todayKey()};
+}
+
+function parseFD(rows, fname){
+  const h = rows[0];
+  const iId=h.indexOf('entry_id'), iCid=h.indexOf('contest_id'), iName=h.indexOf('contest_name'), iFee=h.indexOf('entry_fee');
+  let posEnd = h.indexOf('', iFee+1); if(posEnd<0) posEnd=h.length;
+  const positions = h.slice(iFee+1,posEnd);
+  const contests = {}; let slateId='';
+  for(const r of rows.slice(1)){
+    if(!r[iId] || !/^\d+$/.test(r[iId].trim())) continue;
+    slateId ||= (r[iCid]||'').split('-')[0];
+    const c = contests[r[iCid]] ||= {id:r[iCid], name:r[iName], fee:'$'+r[iFee], entries:0};
+    c.entries++;
+  }
+  let gi=-1, hdrRow=-1;
+  rows.forEach((r,ri)=>{ if(gi<0){ const idx=r.findIndex((x,j)=>x==='Game' && r[j+1]!==undefined && r.includes('Salary')); if(idx>=0){gi=idx;hdrRow=ri} } });
+  const games = {};
+  if(gi>=0) for(const r of rows.slice(hdrRow+1)){
+    const v=(r[gi]||'').trim(); if(!v || games[v]) continue;
+    const [a,b] = v.includes('@') ? v.split('@') : [v,''];
+    games[v] = {label:v, away:a, home:b, ms:null};
+  }
+  const fm = (fname||'').match(/FanDuel-([A-Z0-9]+)-(\d{4}-\d{2}-\d{2})-(\d+)/i);
+  const cl = Object.values(contests);
+  const sport = fm ? fm[1].toUpperCase() : sportFrom(cl.map(c=>c.name).join(' '));
+  const date = fm ? fm[2] : todayKey();
+  slateId ||= fm ? fm[3] : String(Date.now());
+  const type = positions.some(p=>/MVP|CAPTAIN|STAR|PRO/i.test(p)) ? 'Single game' : 'Classic';
+  return {key:'FD|'+slateId, site:'FD', sport, type, contests:cl, games:Object.values(games), positions, date, slateId};
+}
+
+// ---------- FanDuel start-time lookup ----------
+const espnCache = {};
+async function espnGames(sport, date){
+  const path = ESPN[sport]; if(!path) return [];
+  const k = sport+date; if(espnCache[k]) return espnCache[k];
+  const [league, extra] = path.split('?');
+  const url = `https://site.api.espn.com/apis/site/v2/sports/${league}/scoreboard?${extra?extra+'&':''}dates=${date.replace(/-/g,'')}&limit=500`;
+  try{
+    const j = await (await fetch(url)).json();
+    espnCache[k] = (j.events||[]).map(e=>{
+      const comp=e.competitions?.[0]; const t=comp?.competitors||[];
+      const away=t.find(x=>x.homeAway=='away')?.team?.abbreviation, home=t.find(x=>x.homeAway=='home')?.team?.abbreviation;
+      return {away, home, ms:Date.parse(e.date)};
+    });
+  }catch(e){ espnCache[k]=[]; log('Could not reach ESPN for '+sport+' times: '+e.message); }
+  return espnCache[k];
+}
+function matchGame(g, pool){
+  const a=norm(g.away), h=norm(g.home);
+  let m = pool.find(x=>norm(x.away)==a && norm(x.home)==h);
+  if(!m) { const c = pool.filter(x=>[norm(x.away),norm(x.home)].some(t=>t==a||t==h)); if(c.length==1) m=c[0]; }
+  return m;
+}
+async function resolveFD(s){
+  const dkPool = Object.values(slates).filter(x=>x.site=='DK').flatMap(x=>x.games.filter(g=>g.ms && etDateKey(g.ms)==s.date));
+  for(const g of s.games){
+    const mk = s.key+'|'+g.label;
+    if(manual[mk]){ g.ms=manual[mk]; g.src='entered'; continue; }
+    if(g.ms && g.src) continue;
+    const m = matchGame(g, dkPool);
+    if(m){ g.ms=m.ms; g.src='DK file'; continue; }
+  }
+  if(s.games.some(g=>!g.ms)){
+    const pool = await espnGames(s.sport, s.date);
+    for(const g of s.games) if(!g.ms){ const m=matchGame(g,pool); if(m){g.ms=m.ms; g.src='ESPN'} }
+  }
+  s.games.sort((a,b)=>(a.ms||9e15)-(b.ms||9e15));
+}
+
+// ---------- files ----------
+async function handleFiles(files){
+  for(const f of files){
+    const text = await f.text();
+    const rows = parseCSV(text.replace(/^﻿/,''));
+    if(!rows.length) continue;
+    let s;
+    if(rows[0].includes('Entry ID')) s = parseDK(rows, f.name);
+    else if(rows[0].includes('entry_id')) s = parseFD(rows, f.name);
+    else { log(`Skipped ${f.name}: not a DK or FD entries file`); continue; }
+    s.addedAt = Date.now(); s.file = f.name;
+    if(slates[s.key]){ // merge contests from repeat uploads
+      const old = slates[s.key]; const byId = Object.fromEntries(old.contests.map(c=>[c.id,c]));
+      for(const c of s.contests) byId[c.id]=c; s.contests = Object.values(byId);
+    }
+    slates[s.key] = s;
+    log(`Loaded ${f.name}: ${s.site} ${s.sport} ${s.type}, ${s.contests.reduce((n,c)=>n+c.entries,0)} entries, ${s.games.length} games`);
+  }
+  for(const s of Object.values(slates)) if(s.site=='FD') await resolveFD(s);
+  save(); render();
+}
+
+// ---------- events ----------
+function slateName(s){
+  const g = s.games.length;
+  const games = (s.type!='Classic' && g<=2) ? ' '+s.games.map(x=>x.label).join(', ') : ` (${g} game${g==1?'':'s'})`;
+  return `${s.site} ${s.sport} ${s.type}${games}`;
+}
+function slateEvents(s){
+  const byT = {};
+  for(const g of s.games) if(g.ms) (byT[g.ms] ||= []).push(g.label);
+  const ts = Object.keys(byT).map(Number).sort((a,b)=>a-b);
+  return ts.map((t,i)=>({t, games:byT[t], kind: i==0 ? 'first' : (i==ts.length-1 ? 'last' : 'swap'), slate:s}));
+}
+function allEvents(){ return Object.values(slates).flatMap(slateEvents).sort((a,b)=>a.t-b.t); }
+const kindLabel = e => e.kind=='first' ? (e.slate.type=='Classic' ? 'First lock' : 'Lock') : (e.kind=='last' ? 'Last late swap' : 'Late swap');
+
+// ---------- render ----------
+function render(){
+  prune();
+  const el = document.getElementById('slates'); el.innerHTML='';
+  const list = Object.values(slates).sort((a,b)=>(slateEvents(a)[0]?.t||0)-(slateEvents(b)[0]?.t||0));
+  const now = Date.now();
+  for(const s of list){
+    const ev = slateEvents(s); const nextT = ev.find(e=>e.t>now)?.t;
+    const d = document.createElement('div'); d.className='card';
+    const entries = s.contests.reduce((n,c)=>n+c.entries,0);
+    d.innerHTML = `<div class="slate-h"><div><span class="pill ${s.site}">${s.site=='DK'?'DraftKings':'FanDuel'}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <span class="muted small">${ev[0]?fmtDay(ev[0].t):''} · ${entries} entries</span></div><button class="x" title="Remove">✕</button></div>`;
+    const t = document.createElement('table');
+    t.innerHTML = '<tr><th>Start</th><th>Games</th><th></th></tr>' + ev.map(e=>`<tr class="${e.t<now?'past':''} ${e.t==nextT?'next':''}"><td class="t">${fmtTime(e.t)}</td><td>${e.games.join(', ')}</td><td class="tag ${e.kind}">${kindLabel(e)}</td></tr>`).join('');
+    const missing = s.games.filter(g=>!g.ms);
+    for(const g of missing){
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td class="t"><input type="time" step="300"></td><td>${g.label} <span class="warn small">start time not found, enter it</span></td><td></td>`;
+      tr.querySelector('input').onchange = ev2 => {
+        const [hh,mm]=ev2.target.value.split(':').map(Number); const [y,m,dd]=s.date.split('-').map(Number);
+        manual[s.key+'|'+g.label] = g.ms = etToMs(y,m,dd,hh,mm); g.src='entered'; save(); render();
+      };
+      t.appendChild(tr);
+    }
+    d.appendChild(t);
+    const det = document.createElement('details');
+    det.innerHTML = `<summary>${s.contests.length} contest${s.contests.length==1?'':'s'}</summary><div class="small">${s.contests.map(c=>`${c.name} · ${c.fee} × ${c.entries}`).join('<br>')}</div>` +
+      (s.site=='FD' ? `<div class="small muted" style="margin-top:4px">Times from: ${[...new Set(s.games.map(g=>g.src).filter(Boolean))].join(', ')||'none'}</div>`:'');
+    d.appendChild(det);
+    d.querySelector('.x').onclick = ()=>{ delete slates[s.key]; save(); render(); };
+    el.appendChild(d);
+  }
+  // timeline
+  const tl = document.getElementById('timeline'); const ev = allEvents();
+  document.getElementById('timelineCard').hidden = !ev.length;
+  const byT = {}; for(const e of ev) (byT[e.t] ||= []).push(e);
+  const nextT = ev.find(e=>e.t>now)?.t;
+  tl.innerHTML = Object.entries(byT).map(([t,es])=>`<tr class="${+t<now?'past':''} ${+t==nextT?'next':''}"><td class="t">${fmtTime(+t)}</td><td>${es.map(e=>`<span class="pill ${e.slate.site}">${e.slate.site}</span> ${e.slate.sport} ${e.slate.type} <span class="tag ${e.kind}">${kindLabel(e)}</span>`).join('<br>')}</td></tr>`).join('');
+  tick();
+}
+function tick(){
+  const n = allEvents().find(e=>e.t>Date.now());
+  const c = document.getElementById('countdown');
+  if(!n){ c.textContent=''; return; }
+  const m = Math.round((n.t-Date.now())/60000);
+  c.textContent = `next lock ${fmtTime(n.t)} (in ${m>=60?Math.floor(m/60)+'h '+(m%60)+'m':m+'m'})`;
+}
+setInterval(()=>{ render(); }, 60000);
+
+// ---------- ntfy ----------
+function log(msg){ const l=document.getElementById('log'); l.textContent = (msg+'\n'+l.textContent).slice(0,3000); }
+async function ntfy(topic, title, body, atSec){
+  const p = new URLSearchParams({title, tags:'lock', priority:'4'});
+  if(atSec) p.set('at', String(atSec));
+  const r = await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}?${p}`, {method:'POST', body});
+  if(!r.ok) throw new Error('ntfy '+r.status);
+}
+async function scheduleAlerts(){
+  const topic = document.getElementById('topic').value.trim();
+  const lead = Math.max(1, +document.getElementById('lead').value || 25);
+  if(!topic){ log('Enter your ntfy topic first.'); return; }
+  LS.set('topic', topic); LS.set('lead', lead);
+  const sent = LS.get('sent', {});
+  const now = Date.now();
+  const byT = {}; for(const e of allEvents()) if(e.t>now) (byT[e.t] ||= []).push(e);
+  let n=0, skipped=0;
+  for(const [t,es] of Object.entries(byT)){
+    const id = topic+'|'+lead+'|'+t+'|'+es.map(e=>e.slate.key).sort().join(';');
+    if(sent[id]){ skipped++; continue; }
+    const sendAt = +t - lead*60e3;
+    const first = es.some(e=>e.kind=='first');
+    const title = `${first?'Lock':'Late swap'} at ${fmtTime(+t)} ET`;
+    const body = es.map(e=>`${slateName(e.slate)}: ${kindLabel(e).toLowerCase()}` + (e.slate.games.length>2 ? ` (${e.games.join(', ')})` : '')).join('\n');
+    try{
+      await ntfy(topic, title, body, sendAt > now + 15e3 ? Math.floor(sendAt/1000) : null);
+      sent[id] = Date.now(); n++;
+    }catch(err){ log('Failed to schedule '+title+': '+err.message); }
+  }
+  for(const [k,v] of Object.entries(sent)) if(v < now - 3*86400e3) delete sent[k];
+  LS.set('sent', sent);
+  log(`Scheduled ${n} alert${n==1?'':'s'} (${lead} min before each lock)${skipped?`, ${skipped} already scheduled`:''}.`);
+}
+
+// ---------- wiring ----------
+const drop = document.getElementById('drop'), file = document.getElementById('file');
+drop.onclick = ()=>file.click();
+file.onchange = ()=>{ handleFiles([...file.files]); file.value=''; };
+drop.ondragover = e=>{ e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = ()=>drop.classList.remove('over');
+drop.ondrop = e=>{ e.preventDefault(); drop.classList.remove('over'); handleFiles([...e.dataTransfer.files]); };
+document.getElementById('topic').value = LS.get('topic','');
+document.getElementById('lead').value = LS.get('lead',25);
+document.getElementById('schedule').onclick = scheduleAlerts;
+document.getElementById('test').onclick = async ()=>{
+  const topic=document.getElementById('topic').value.trim(); if(!topic) return log('Enter your ntfy topic first.');
+  LS.set('topic', topic);
+  try{ await ntfy(topic,'Slate alerts connected','Test from your slate schedule page.'); log('Test sent.'); }catch(e){ log('Test failed: '+e.message); }
+};
+document.getElementById('clear').onclick = ()=>{ slates={}; save(); render(); };
+render();
+</script>
+</body>
+</html>
