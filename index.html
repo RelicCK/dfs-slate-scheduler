@@ -131,14 +131,17 @@ function sportFrom(name){
 // ---------- state ----------
 let slates = LS.get('slates', {});   // key -> slate
 let manual = LS.get('manualTimes', {}); // gameKey -> ms
+// older saves: DK games with no time and no matchup were already-played games
+for(const sl of Object.values(slates)) if(sl.site=='DK') for(const g of sl.games) if(!g.ms && !g.started && !/@/.test(g.label)) g.started=true;
 
 function save(){ LS.set('slates', slates); LS.set('manualTimes', manual); }
 function prune(){
   const cutoff = Date.now() - 12*3600e3;
   for(const [k,s] of Object.entries(slates)){
-    const times = s.games.map(g=>g.ms).filter(Boolean);
-    const last = times.length ? Math.max(...times) : (s.addedAt||0);
-    if(last < cutoff) delete slates[k];
+    const times = s.games.filter(g=>!g.started).map(g=>g.ms).filter(Boolean);
+    const unresolved = s.games.some(g=>!g.ms && !g.started);
+    const last = times.length ? Math.max(...times) : 0;
+    if(unresolved ? (s.addedAt||0) < Date.now()-7*86400e3 : last < cutoff) delete slates[k];
   }
 }
 
@@ -161,7 +164,7 @@ function parseDK(rows, fname){
   if(gi>=0) for(const r of rows.slice(hdrRow+1)){
     const v=(r[gi]||'').trim(); if(!v) continue;
     const m = v.match(/^(.*?)\s*(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-    if(!m) { games[v] ||= {label:v, ms:null}; continue; }
+    if(!m) { games['started|'+v] ||= {label:v, ms:null, started:true, count:0}; games['started|'+v].count++; continue; }
     let label=m[1].trim(); let hr=+m[5]%12; if(m[7].toUpperCase()=='PM') hr+=12;
     const ms = etToMs(+m[4],+m[2],+m[3],hr,+m[6]);
     const key = label+'|'+ms;
@@ -209,11 +212,15 @@ function parseFD(rows, fname){
 
 // ---------- FanDuel start-time lookup ----------
 const espnCache = {};
+function addDays(date, n){ const [y,m,d]=date.split('-').map(Number); const t=new Date(Date.UTC(y,m-1,d+n)); return t.toISOString().slice(0,10); }
 async function espnGames(sport, date){
   const path = ESPN[sport]; if(!path) return [];
   const k = sport+date; if(espnCache[k]) return espnCache[k];
   const [league, extra] = path.split('?');
-  const url = `https://site.api.espn.com/apis/site/v2/sports/${league}/scoreboard?${extra?extra+'&':''}dates=${date.replace(/-/g,'')}&limit=500`;
+  // Slates can span several days (e.g. NFL Mon-Thu), so look a few days ahead
+  const span = /football/.test(league) ? 6 : 2;
+  const range = date.replace(/-/g,'') + '-' + addDays(date, span).replace(/-/g,'');
+  const url = `https://site.api.espn.com/apis/site/v2/sports/${league}/scoreboard?${extra?extra+'&':''}dates=${range}&limit=1000`;
   try{
     const j = await (await fetch(url)).json();
     espnCache[k] = (j.events||[]).map(e=>{
@@ -226,12 +233,14 @@ async function espnGames(sport, date){
 }
 function matchGame(g, pool){
   const a=norm(g.away), h=norm(g.home);
+  pool = [...pool].sort((x,y)=>x.ms-y.ms);
   let m = pool.find(x=>norm(x.away)==a && norm(x.home)==h);
   if(!m) { const c = pool.filter(x=>[norm(x.away),norm(x.home)].some(t=>t==a||t==h)); if(c.length==1) m=c[0]; }
   return m;
 }
 async function resolveFD(s){
-  const dkPool = Object.values(slates).filter(x=>x.site=='DK').flatMap(x=>x.games.filter(g=>g.ms && etDateKey(g.ms)==s.date));
+  const startMs = etToMs(...s.date.split('-').map(Number), 0, 0), endMs = startMs + 7*86400e3;
+  const dkPool = Object.values(slates).filter(x=>x.site=='DK' && x.sport==s.sport).flatMap(x=>x.games.filter(g=>g.ms && g.ms>=startMs && g.ms<endMs));
   for(const g of s.games){
     const mk = s.key+'|'+g.label;
     if(manual[mk]){ g.ms=manual[mk]; g.src='entered'; continue; }
@@ -271,18 +280,24 @@ async function handleFiles(files){
 // ---------- events ----------
 // Distinguishing detail: matchups for small slates, else game count and time window
 function slateDetail(s){
-  const g = s.games.length, ts = s.games.map(x=>x.ms).filter(Boolean);
-  if(g<=2) return s.games.map(x=>x.label).join(', ');
+  const live = s.games.filter(x=>!x.started), done = s.games.length - live.length;
+  const g = live.length, ts = live.map(x=>x.ms).filter(Boolean);
+  const extra = done ? ' (started earlier)' : '';
+  if(g<=2) return live.map(x=>x.label).join(', ') + extra;
   const lo = Math.min(...ts), hi = Math.max(...ts);
-  const win = ts.length ? (lo==hi ? fmtTime(lo) : `${fmtTime(lo)}–${fmtTime(hi)}`) : '';
-  return `${g} games${win?' · '+win:''}`;
+  const wd = t => new Date(t).toLocaleDateString('en-US',{timeZone:TZ,weekday:'short'})+' ';
+  const md = ts.length && etDateKey(lo)!=etDateKey(hi);
+  const f = t => (md?wd(t):'')+fmtTime(t);
+  const win = ts.length ? (lo==hi ? fmtTime(lo) : `${f(lo)}–${f(hi)}`) : '';
+  return `${g} games${win?' · '+win:''}${extra}`;
 }
 function slateName(s){ return `${s.site} ${s.sport} ${s.type} · ${slateDetail(s)}`; }
 function slateEvents(s){
   const byT = {};
   for(const g of s.games) if(g.ms) (byT[g.ms] ||= []).push(g.label);
   const ts = Object.keys(byT).map(Number).sort((a,b)=>a-b);
-  return ts.map((t,i)=>({t, games:byT[t], kind: i==0 ? 'first' : (i==ts.length-1 ? 'last' : 'swap'), slate:s}));
+  const started = s.games.some(g=>g.started);
+  return ts.map((t,i)=>({t, games:byT[t], kind: (i==0 && !started) ? 'first' : (i==ts.length-1 ? 'last' : 'swap'), slate:s}));
 }
 function allEvents(){ return Object.values(slates).flatMap(slateEvents).sort((a,b)=>a.t-b.t); }
 const kindLabel = e => e.kind=='first' ? (e.slate.type=='Classic' ? 'First lock' : 'Lock') : (e.kind=='last' ? 'Last late swap' : 'Late swap');
@@ -295,17 +310,21 @@ function render(){
   const now = Date.now();
   for(const s of list){
     const ev = slateEvents(s); const nextT = ev.find(e=>e.t>now)?.t;
+    const multiDay = new Set(ev.map(e=>etDateKey(e.t))).size > 1 || s.games.some(g=>g.started);
+    const when = t => multiDay ? new Date(t).toLocaleDateString('en-US',{timeZone:TZ,weekday:'short'})+' '+fmtTime(t) : fmtTime(t);
     const d = document.createElement('div'); d.className='card';
     const entries = s.contests.reduce((n,c)=>n+c.entries,0);
     d.innerHTML = `<div class="slate-h"><div><span class="pill ${s.site}">${s.site=='DK'?'DraftKings':'FanDuel'}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <strong>${slateDetail(s)}</strong> <span class="muted small">${ev[0]?fmtDay(ev[0].t):''} · ${entries} entries</span></div><button class="x" title="Remove">✕</button></div>`;
     const t = document.createElement('table');
-    t.innerHTML = '<tr><th>Start</th><th>Games</th><th></th></tr>' + ev.map(e=>`<tr class="${e.t<now?'past':''} ${e.t==nextT?'next':''}"><td class="t">${fmtTime(e.t)}</td><td>${e.games.join(', ')}</td><td class="tag ${e.kind}">${kindLabel(e)}</td></tr>`).join('');
-    const missing = s.games.filter(g=>!g.ms);
+    t.innerHTML = '<tr><th>Start</th><th>Games</th><th></th></tr>' + ev.map(e=>`<tr class="${e.t<now?'past':''} ${e.t==nextT?'next':''}"><td class="t">${when(e.t)}</td><td>${e.games.join(', ')}</td><td class="tag ${e.kind}">${kindLabel(e)}</td></tr>`).join('')
+      + s.games.filter(g=>g.started).map(g=>`<tr class="past"><td class="t">Earlier</td><td>${g.label=='Final'?'Game(s) already played':g.label}</td><td class="tag">Locked</td></tr>`).join('');
+    const missing = s.games.filter(g=>!g.ms && !g.started);
     for(const g of missing){
       const tr=document.createElement('tr');
-      tr.innerHTML=`<td class="t"><input type="time" step="300"></td><td>${g.label} <span class="warn small">start time not found, enter it</span></td><td></td>`;
+      tr.innerHTML=`<td class="t"><input type="datetime-local" step="300" value="${s.date}T19:00"></td><td>${g.label} <span class="warn small">start time not found, enter it</span></td><td></td>`;
       tr.querySelector('input').onchange = ev2 => {
-        const [hh,mm]=ev2.target.value.split(':').map(Number); const [y,m,dd]=s.date.split('-').map(Number);
+        const [dpart,tpart]=ev2.target.value.split('T'); if(!tpart) return;
+        const [hh,mm]=tpart.split(':').map(Number); const [y,m,dd]=dpart.split('-').map(Number);
         manual[s.key+'|'+g.label] = g.ms = etToMs(y,m,dd,hh,mm); g.src='entered'; save(); render();
       };
       t.appendChild(tr);
@@ -319,7 +338,7 @@ function render(){
     el.appendChild(d);
   }
   // timeline
-  const tl = document.getElementById('timeline'); const ev = allEvents();
+  const tl = document.getElementById('timeline'); const ev = allEvents().filter(e=>e.t > now - 6*3600e3);
   document.getElementById('timelineCard').hidden = !ev.length;
   const byT = {}; for(const e of ev) (byT[e.t] ||= []).push(e);
   const nextT = ev.find(e=>e.t>now)?.t;
@@ -335,7 +354,8 @@ function tick(){
   const c = document.getElementById('countdown');
   if(!n){ c.textContent=''; return; }
   const m = Math.round((n.t-Date.now())/60000);
-  c.textContent = `next lock ${fmtTime(n.t)} (in ${m>=60?Math.floor(m/60)+'h '+(m%60)+'m':m+'m'})`;
+  const dayPfx = etDateKey(n.t)==todayKey() ? '' : new Date(n.t).toLocaleDateString('en-US',{timeZone:TZ,weekday:'short'})+' ';
+  c.textContent = `next lock ${dayPfx}${fmtTime(n.t)} (in ${m>=60?Math.floor(m/60)+'h '+(m%60)+'m':m+'m'})`;
 }
 setInterval(()=>{ render(); }, 60000);
 
