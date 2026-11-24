@@ -13,8 +13,13 @@ main{max-width:860px;margin:0 auto;padding:16px}
 h1{font-size:22px;margin:4px 0 2px}
 .sub{color:var(--muted);margin:0 0 16px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
-#drop{border:2px dashed var(--line);text-align:center;padding:22px 12px;cursor:pointer}
-#drop.over{border-color:var(--accent);background:var(--soft)}
+.top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.top h1{margin:0}
+#gear{font-size:18px;line-height:1;padding:6px 10px}
+#gear.on{background:var(--soft)}
+.statusline{margin:6px 0 12px}
+.statusline span{display:block}
+body.over main{outline:3px dashed var(--accent);outline-offset:-6px}
 button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 input[type=text],input[type=number],input[type=time]{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
@@ -64,16 +69,17 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px}
 </head>
 <body>
 <main>
-  <h1>Slate Lock Schedule</h1>
-  <p class="sub">Drop in the DraftKings and FanDuel entry files you upload to Sim Savant. All times Eastern.</p>
-
-  <div class="card" id="drop">
-    <strong>Drop entry CSVs here</strong> or tap to choose files
-    <div class="small muted">DKEntries*.csv and FanDuel-*-entries-upload-template.csv, any number at once</div>
-    <input type="file" id="file" accept=".csv,text/csv" multiple hidden>
+  <div class="top">
+    <h1>Slate Locks</h1>
+    <div class="row">
+      <button class="primary" id="addFiles">+ Add files</button>
+      <button id="gear" title="Settings" aria-label="Settings">⚙</button>
+    </div>
   </div>
+  <input type="file" id="file" accept=".csv,text/csv" multiple hidden>
+  <div class="small muted statusline"><span id="syncStatus">Sync: enter your ntfy topic in settings.</span> <span id="lastLog"></span></div>
 
-  <div class="card">
+  <div class="card" id="settings" hidden>
     <div class="row">
       <label>ntfy topic <input type="text" id="topic" placeholder="your-secret-topic" size="18"></label>
       <label>Alert <input type="number" id="lead" min="1" max="180" value="25" style="width:64px"> min before</label>
@@ -81,10 +87,10 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px}
     <div class="row" style="margin-top:8px">
       <button class="primary" id="schedule">Schedule alerts</button>
       <button id="test">Send test</button>
-      <button id="clear">Clear slates</button>
       <button id="syncNow">Sync now</button>
+      <button id="clear">Clear slates</button>
     </div>
-    <div class="small muted" id="syncStatus" style="margin-top:6px">Sync: enter your ntfy topic to share slates between devices.</div>
+    <div class="small muted" style="margin-top:8px">Add your DK and FD entry CSVs with the button above, or drag them anywhere onto the page. All times Eastern.</div>
     <div id="log"></div>
   </div>
 
@@ -464,7 +470,7 @@ function tick(){
 setInterval(()=>{ render(); }, 60000);
 
 // ---------- ntfy ----------
-function log(msg){ const l=document.getElementById('log'); l.textContent = (msg+'\n'+l.textContent).slice(0,3000); }
+function log(msg){ const l=document.getElementById('log'); l.textContent = (msg+'\n'+l.textContent).slice(0,3000); document.getElementById('lastLog').textContent = msg; }
 // ---------- sync between devices ----------
 // Slates are shared through a second ntfy topic, "<your topic>-sync", which your phone app
 // isn't subscribed to. Only schedule data goes there (no entry IDs or lineups), compressed.
@@ -562,8 +568,11 @@ async function scheduleAlerts(auto){
 }
 
 // ---------- wiring ----------
-const drop = document.getElementById('drop'), file = document.getElementById('file');
-drop.onclick = ()=>file.click();
+const file = document.getElementById('file'), drop = document.body;
+document.getElementById('addFiles').onclick = ()=>file.click();
+const settings = document.getElementById('settings'), gear = document.getElementById('gear');
+gear.onclick = ()=>{ settings.hidden = !settings.hidden; gear.classList.toggle('on', !settings.hidden); };
+if(!LS.get('topic','')){ settings.hidden = false; gear.classList.add('on'); }
 file.onchange = ()=>{ handleFiles([...file.files]); file.value=''; };
 drop.ondragover = e=>{ e.preventDefault(); drop.classList.add('over'); };
 drop.ondragleave = ()=>drop.classList.remove('over');
