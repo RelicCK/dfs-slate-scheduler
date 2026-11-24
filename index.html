@@ -316,7 +316,7 @@ function slateEvents(s){
   return ts.map((t,i)=>({t, games:byT[t], kind: (i==0 && !started) ? 'first' : (i==ts.length-1 ? 'last' : 'swap'), slate:s}));
 }
 function allEvents(){ return Object.values(slates).flatMap(slateEvents).sort((a,b)=>a.t-b.t); }
-const kindLabel = e => e.kind=='first' ? 'Lock' : 'Late Swap';
+const kindLabel = e => e.kind=='first' ? 'First Lock' : 'Late Swap';
 
 // ---------- render ----------
 function render(){
