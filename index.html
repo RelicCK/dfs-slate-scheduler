@@ -64,7 +64,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px}
   </div>
 
   <div class="card" id="timelineCard" hidden>
-    <strong>Today's locks</strong> <span class="muted small" id="countdown"></span>
+    <strong>Upcoming locks</strong> <span class="muted small" id="countdown"></span>
     <table id="timeline"></table>
   </div>
 
@@ -269,11 +269,15 @@ async function handleFiles(files){
 }
 
 // ---------- events ----------
-function slateName(s){
-  const g = s.games.length;
-  const games = (s.type!='Classic' && g<=2) ? ' '+s.games.map(x=>x.label).join(', ') : ` (${g} game${g==1?'':'s'})`;
-  return `${s.site} ${s.sport} ${s.type}${games}`;
+// Distinguishing detail: matchups for small slates, else game count and time window
+function slateDetail(s){
+  const g = s.games.length, ts = s.games.map(x=>x.ms).filter(Boolean);
+  if(g<=2) return s.games.map(x=>x.label).join(', ');
+  const lo = Math.min(...ts), hi = Math.max(...ts);
+  const win = ts.length ? (lo==hi ? fmtTime(lo) : `${fmtTime(lo)}–${fmtTime(hi)}`) : '';
+  return `${g} games${win?' · '+win:''}`;
 }
+function slateName(s){ return `${s.site} ${s.sport} ${s.type} · ${slateDetail(s)}`; }
 function slateEvents(s){
   const byT = {};
   for(const g of s.games) if(g.ms) (byT[g.ms] ||= []).push(g.label);
@@ -293,7 +297,7 @@ function render(){
     const ev = slateEvents(s); const nextT = ev.find(e=>e.t>now)?.t;
     const d = document.createElement('div'); d.className='card';
     const entries = s.contests.reduce((n,c)=>n+c.entries,0);
-    d.innerHTML = `<div class="slate-h"><div><span class="pill ${s.site}">${s.site=='DK'?'DraftKings':'FanDuel'}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <span class="muted small">${ev[0]?fmtDay(ev[0].t):''} · ${entries} entries</span></div><button class="x" title="Remove">✕</button></div>`;
+    d.innerHTML = `<div class="slate-h"><div><span class="pill ${s.site}">${s.site=='DK'?'DraftKings':'FanDuel'}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <strong>${slateDetail(s)}</strong> <span class="muted small">${ev[0]?fmtDay(ev[0].t):''} · ${entries} entries</span></div><button class="x" title="Remove">✕</button></div>`;
     const t = document.createElement('table');
     t.innerHTML = '<tr><th>Start</th><th>Games</th><th></th></tr>' + ev.map(e=>`<tr class="${e.t<now?'past':''} ${e.t==nextT?'next':''}"><td class="t">${fmtTime(e.t)}</td><td>${e.games.join(', ')}</td><td class="tag ${e.kind}">${kindLabel(e)}</td></tr>`).join('');
     const missing = s.games.filter(g=>!g.ms);
@@ -319,7 +323,11 @@ function render(){
   document.getElementById('timelineCard').hidden = !ev.length;
   const byT = {}; for(const e of ev) (byT[e.t] ||= []).push(e);
   const nextT = ev.find(e=>e.t>now)?.t;
-  tl.innerHTML = Object.entries(byT).map(([t,es])=>`<tr class="${+t<now?'past':''} ${+t==nextT?'next':''}"><td class="t">${fmtTime(+t)}</td><td>${es.map(e=>`<span class="pill ${e.slate.site}">${e.slate.site}</span> ${e.slate.sport} ${e.slate.type} <span class="tag ${e.kind}">${kindLabel(e)}</span>`).join('<br>')}</td></tr>`).join('');
+  let lastDay = '';
+  tl.innerHTML = Object.entries(byT).sort((a,b)=>a[0]-b[0]).map(([t,es])=>{
+    const day = fmtDay(+t); const hdr = day!==lastDay ? `<tr><th colspan="2">${etDateKey(+t)==todayKey()?'Today, ':''}${day}</th></tr>` : ''; lastDay = day;
+    return hdr + `<tr class="${+t<now?'past':''} ${+t==nextT?'next':''}"><td class="t">${fmtTime(+t)}</td><td>${es.map(e=>`<span class="pill ${e.slate.site}">${e.slate.site}</span> ${e.slate.sport} ${e.slate.type} <span class="muted">${slateDetail(e.slate)}</span> <span class="tag ${e.kind}">${kindLabel(e)}</span>`).join('<br>')}</td></tr>`;
+  }).join('');
   tick();
 }
 function tick(){
