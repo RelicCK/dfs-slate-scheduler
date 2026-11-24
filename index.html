@@ -36,6 +36,29 @@ td.t{white-space:nowrap;font-variant-numeric:tabular-nums;width:1%}
 details summary{cursor:pointer;color:var(--muted);font-size:13px}
 #log{white-space:pre-wrap;font-size:13px;color:var(--muted);margin-top:8px}
 .slate-h{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:space-between}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:none;border-radius:0;padding:5px 10px;font-size:13px}
+.seg button.on{background:var(--accent);color:#fff}
+.dnav{display:flex;align-items:center;justify-content:space-between;margin:10px 0 6px}
+.dnav button{padding:4px 12px}
+.gantt{position:relative;margin-top:4px}
+.gaxis{position:relative;height:18px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--line)}
+.gaxis span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+.grow{position:relative;padding:6px 0 4px;border-bottom:1px solid var(--line)}
+.glabel{font-size:13px;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gtrack{position:relative;height:36px}
+.gtime{position:absolute;top:21px;transform:translateX(-50%);font-size:10px;color:var(--muted);white-space:nowrap}
+.ggrid{position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
+.gbar{position:absolute;top:7px;height:8px;border-radius:4px;opacity:.55}
+.gbar.DK{background:var(--dk)}.gbar.FD{background:var(--fd)}
+.gbar.cont{border-top-left-radius:0;border-bottom-left-radius:0}
+.gtick{position:absolute;top:3px;width:16px;height:16px;margin-left:-8px;border-radius:50%;border:2px solid var(--card);background:var(--ink)}
+.gtick.first{background:var(--warn)}
+.gtick.past{opacity:.4}
+.gnow{position:absolute;top:0;bottom:0;width:2px;background:var(--warn);z-index:2}
+.gnow::before{content:'now';position:absolute;top:-2px;left:4px;font-size:10px;color:var(--warn)}
+.legend{font-size:12px;color:var(--muted);margin-top:6px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px}
 .x{border:none;background:none;color:var(--muted);padding:2px 6px}
 </style>
 </head>
@@ -64,8 +87,10 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px}
   </div>
 
   <div class="card" id="timelineCard" hidden>
-    <strong>Upcoming locks</strong> <span class="muted small" id="countdown"></span>
+    <div class="slate-h"><div><strong>Upcoming locks</strong> <span class="muted small" id="countdown"></span></div>
+      <div class="seg"><button id="vList" class="on">List</button><button id="vDay">Day view</button></div></div>
     <table id="timeline"></table>
+    <div id="dayview" hidden></div>
   </div>
 
   <div id="slates"></div>
@@ -368,8 +393,64 @@ function render(){
     const day = fmtDay(+t); const hdr = day!==lastDay ? `<tr><th colspan="2">${etDateKey(+t)==todayKey()?'Today, ':(etDateKey(+t)==etDateKey(Date.now()+864e5)?'Tomorrow, ':'')}${day}</th></tr>` : ''; lastDay = day;
     return hdr + `<tr class="${+t<now?'past':''} ${+t==nextT?'next':''}"><td class="t">${fmtTime(+t)}</td><td>${es.map(e=>`<span class="pill ${e.slate.site}">${e.slate.site}</span> ${e.slate.sport} ${e.slate.type} <span class="muted">${slateDetail(e.slate)}</span> <span class="tag ${e.kind}">${kindLabel(e)}</span>`).join('<br>')}</td></tr>`;
   }).join('');
+  renderDay();
   tick();
 }
+
+// ---------- day view ----------
+let view = LS.get('view','list'), dayKey = null;
+function renderDay(){
+  const isDay = view=='day';
+  document.getElementById('timeline').hidden = isDay;
+  const dv = document.getElementById('dayview'); dv.hidden = !isDay;
+  document.getElementById('vList').classList.toggle('on', !isDay);
+  document.getElementById('vDay').classList.toggle('on', isDay);
+  if(!isDay) return;
+  const now = Date.now();
+  const all = allEvents();
+  const days = [...new Set(all.map(e=>etDateKey(e.t)))].filter(d=>d>=todayKey() || all.some(e=>etDateKey(e.t)==d && e.t>now-6*3600e3)).sort();
+  if(!days.length){ dv.innerHTML='<p class="muted">No locks to show.</p>'; return; }
+  if(!days.includes(dayKey)) dayKey = days.includes(todayKey()) ? todayKey() : days[0];
+  const di = days.indexOf(dayKey);
+  const ev = all.filter(e=>etDateKey(e.t)==dayKey);
+  // hour range for this day
+  const [y,m,d] = dayKey.split('-').map(Number);
+  const hourMs = h => etToMs(y,m,d,0,0) + h*3600e3;
+  const hrs = ev.map(e=>(e.t-etToMs(y,m,d,0,0))/3600e3);
+  let h0 = Math.floor(Math.min(...hrs)) - 1, h1 = Math.ceil(Math.max(...hrs)) + 1;
+  if(dayKey==todayKey()){ const nh=(now-etToMs(y,m,d,0,0))/3600e3; if(nh>=h0-3 && nh<h0) h0=Math.floor(nh); }
+  if(h1-h0 < 4) h1 = h0+4;
+  h0=Math.max(0,h0); h1=Math.min(24,h1);
+  const pct = t => ((t - hourMs(h0)) / (hourMs(h1)-hourMs(h0)) * 100);
+  const step = (h1-h0) > 8 ? 2 : 1;
+  let axis='', grid='';
+  for(let h=h0; h<=h1; h++){
+    const x = pct(hourMs(h));
+    grid += `<div class="ggrid" style="left:${x}%"></div>`;
+    if((h-h0)%step==0 && h<h1) axis += `<span style="left:${Math.max(4,x)}%">${((h+11)%12)+1}${h<12||h==24?'a':'p'}</span>`;
+  }
+  // rows: one per slate with events this day
+  const bySlate = new Map();
+  for(const e of ev){ if(!bySlate.has(e.slate)) bySlate.set(e.slate, []); bySlate.get(e.slate).push(e); }
+  const rows = [...bySlate.entries()].sort((a,b)=> a[1][0].t-b[1][0].t || a[0].sport.localeCompare(b[0].sport));
+  const nowLine = (now>hourMs(h0) && now<hourMs(h1)) ? `<div class="gnow" style="left:${pct(now)}%"></div>` : '';
+  const body = rows.map(([s,es])=>{
+    const startedBefore = slateEvents(s).some(e=>e.t<es[0].t) || s.games.some(g=>g.started);
+    const lo = startedBefore ? 0 : pct(es[0].t), hi = pct(es[es.length-1].t);
+    const ticks = es.map(e=>`<div class="gtick ${e.kind=='first'?'first':''} ${e.t<now?'past':''}" style="left:${pct(e.t)}%" title="${fmtTime(e.t)} ${kindLabel(e)}: ${e.games.join(', ')}"></div><span class="gtime" style="left:${Math.min(95,Math.max(5,pct(e.t)))}%">${fmtTime(e.t).replace(':00','').replace(' ','').toLowerCase()}</span>`).join('');
+    return `<div class="grow"><div class="glabel"><span class="pill ${s.site}">${s.site}</span> ${s.sport} ${s.type} <span class="muted">${slateDetail(s)}</span></div>
+      <div class="gtrack">${grid}<div class="gbar ${s.site} ${startedBefore?'cont':''}" style="left:${lo}%;width:${Math.max(hi-lo,0.8)}%"></div>${ticks}</div></div>`;
+  }).join('');
+  const dayLabel = (dayKey==todayKey()?'Today, ':(dayKey==etDateKey(now+864e5)?'Tomorrow, ':'')) + fmtDay(hourMs(12));
+  dv.innerHTML = `<div class="dnav"><button id="dPrev" ${di<=0?'disabled':''}>‹</button><strong>${dayLabel}</strong><button id="dNext" ${di>=days.length-1?'disabled':''}>›</button></div>
+    <div class="gantt"><div class="gaxis">${axis}</div><div style="position:relative">${nowLine}${body}</div></div>
+    <div class="legend"><span><i style="background:var(--warn)"></i>First Lock</span><span><i style="background:var(--ink)"></i>Late Swap</span></div>`;
+  dv.querySelector('#dPrev').onclick = ()=>{ dayKey = days[di-1]; renderDay(); };
+  dv.querySelector('#dNext').onclick = ()=>{ dayKey = days[di+1]; renderDay(); };
+}
+document.getElementById('vList').onclick = ()=>{ view='list'; LS.set('view',view); renderDay(); };
+document.getElementById('vDay').onclick = ()=>{ view='day'; LS.set('view',view); renderDay(); };
+
 function tick(){
   const n = allEvents().find(e=>e.t>Date.now());
   const c = document.getElementById('countdown');
