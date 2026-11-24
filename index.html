@@ -305,7 +305,7 @@ async function handleFiles(files){
     log(`Loaded ${f.name}: ${s.site} ${s.sport} ${s.type}, ${s.contests.reduce((n,c)=>n+c.entries,0)} entries, ${s.games.length} games`);
   }
   for(const s of Object.values(slates)) if(s.site=='FD') await resolveFD(s);
-  save(); render();
+  save(); render(); changed();
   if(LS.get('autoSchedule', false)) scheduleAlerts(true);
 }
 
@@ -370,7 +370,7 @@ function render(){
       tr.querySelector('input').onchange = ev2 => {
         const [dpart,tpart]=ev2.target.value.split('T'); if(!tpart) return;
         const [hh,mm]=tpart.split(':').map(Number); const [y,m,dd]=dpart.split('-').map(Number);
-        manual[s.key+'|'+g.label] = g.ms = etToMs(y,m,dd,hh,mm); g.src='entered'; save(); render();
+        manual[s.key+'|'+g.label] = g.ms = etToMs(y,m,dd,hh,mm); g.src='entered'; save(); render(); changed();
       };
       t.appendChild(tr);
     }
@@ -379,7 +379,7 @@ function render(){
     det.innerHTML = `<summary>${s.contests.length} contest${s.contests.length==1?'':'s'}</summary><div class="small">${s.contests.map(c=>`${c.name} · ${c.fee} × ${c.entries}`).join('<br>')}</div>` +
       (s.site=='FD' ? `<div class="small muted" style="margin-top:4px">Times from: ${[...new Set(s.games.map(g=>g.src).filter(Boolean))].join(', ')||'none'}</div>`:'');
     d.appendChild(det);
-    d.querySelector('.x').onclick = ()=>{ delete slates[s.key]; save(); render(); };
+    d.querySelector('.x').onclick = ()=>{ delete slates[s.key]; save(); render(); changed(); };
     el.appendChild(d);
   }
   // timeline
@@ -463,6 +463,49 @@ setInterval(()=>{ render(); }, 60000);
 
 // ---------- ntfy ----------
 function log(msg){ const l=document.getElementById('log'); l.textContent = (msg+'\n'+l.textContent).slice(0,3000); }
+// ---------- sync between devices ----------
+// Slates are shared through a second ntfy topic, "<your topic>-sync", which your phone app
+// isn't subscribed to. Only schedule data goes there (no entry IDs or lineups), compressed.
+// Last change wins. ntfy.sh keeps it for 12 hours, so each device re-posts it every 6 hours when opened.
+const syncTopic = () => { const t=(document.getElementById('topic').value||LS.get('topic','')).trim(); return t ? t+'-sync' : ''; };
+async function pack(obj){
+  const bytes = await new Response(new Blob([JSON.stringify(obj)]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer();
+  let bin=''; new Uint8Array(bytes).forEach(b=>bin+=String.fromCharCode(b)); return btoa(bin);
+}
+async function unpack(b64){
+  const bin = Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
+  return JSON.parse(await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text());
+}
+function slimSlates(){
+  return Object.values(slates).map(x=>({key:x.key, site:x.site, sport:x.sport, type:x.type, date:x.date, slateId:x.slateId, addedAt:x.addedAt,
+    games:x.games.map(g=>({label:g.label, away:g.away, home:g.home, ms:g.ms, src:g.src, started:g.started, teams:g.teams})),
+    contests:x.contests.map(c=>({name:c.name, fee:c.fee, entries:c.entries, id:c.id}))}));
+}
+async function pushSync(){
+  const t = syncTopic(); if(!t) return;
+  try{
+    const body = await pack({v:1, at:LS.get('changedAt',0), slates:slimSlates()});
+    const r = await fetch(`https://ntfy.sh/${encodeURIComponent(t)}?priority=1`, {method:'POST', body});
+    if(r.ok) LS.set('pushedAt', Date.now());
+  }catch(e){ log('Sync upload failed: '+e.message); }
+}
+function changed(){ LS.set('changedAt', Date.now()); pushSync(); }
+async function pullSync(){
+  const t = syncTopic(); if(!t) return;
+  try{
+    const txt = await (await fetch(`https://ntfy.sh/${encodeURIComponent(t)}/json?poll=1&since=24h`)).text();
+    const msgs = txt.split('\n').filter(Boolean).map(l=>JSON.parse(l)).filter(m=>m.event=='message' && m.message);
+    let best=null;
+    for(const m of msgs){ try{ const d=await unpack(m.message); if(d.v==1 && (!best || d.at>best.at)) best=d; }catch(e){} }
+    if(best && best.at > LS.get('changedAt',0)){
+      slates = Object.fromEntries(best.slates.map(x=>[x.key,x])); LS.set('changedAt', best.at);
+      save(); render(); log(`Synced ${best.slates.length} slate${best.slates.length==1?'':'s'} from your other device.`);
+      if(LS.get('autoSchedule', false)) scheduleAlerts(true);
+    } else if(Object.keys(slates).length && Date.now()-LS.get('pushedAt',0) > 6*3600e3 && LS.get('changedAt',0) >= (best?.at||0)) pushSync();
+  }catch(e){ log('Sync check failed: '+e.message); }
+}
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) pullSync(); });
+
 async function ntfy(topic, title, body, atSec){
   const p = new URLSearchParams({title, tags:'lock', priority:'4'});
   if(atSec) p.set('at', String(atSec));
@@ -518,6 +561,7 @@ drop.ondragover = e=>{ e.preventDefault(); drop.classList.add('over'); };
 drop.ondragleave = ()=>drop.classList.remove('over');
 drop.ondrop = e=>{ e.preventDefault(); drop.classList.remove('over'); handleFiles([...e.dataTransfer.files]); };
 document.getElementById('topic').value = LS.get('topic','');
+document.getElementById('topic').onchange = e=>{ LS.set('topic', e.target.value.trim()); pullSync(); };
 document.getElementById('lead').value = LS.get('lead',25);
 document.getElementById('schedule').onclick = ()=>scheduleAlerts(false);
 document.getElementById('test').onclick = async ()=>{
@@ -525,12 +569,13 @@ document.getElementById('test').onclick = async ()=>{
   LS.set('topic', topic);
   try{ await ntfy(topic,'Slate alerts connected','Test from your slate schedule page.'); log('Test sent.'); }catch(e){ log('Test failed: '+e.message); }
 };
-document.getElementById('clear').onclick = ()=>{ slates={}; save(); render(); };
+document.getElementById('clear').onclick = ()=>{ slates={}; save(); render(); changed(); };
 render();
 (async()=>{
   const todo = Object.values(slates).filter(x=>x.site=='FD' && x.games.some(g=>!g.ms && !g.started));
   for(const x of todo) await resolveFD(x);
   if(todo.length){ save(); render(); }
+  await pullSync();
   if(LS.get('autoSchedule', false)) scheduleAlerts(true);
 })();
 </script>
