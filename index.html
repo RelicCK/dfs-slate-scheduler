@@ -82,7 +82,9 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px}
       <button class="primary" id="schedule">Schedule alerts</button>
       <button id="test">Send test</button>
       <button id="clear">Clear slates</button>
+      <button id="syncNow">Sync now</button>
     </div>
+    <div class="small muted" id="syncStatus" style="margin-top:6px">Sync: enter your ntfy topic to share slates between devices.</div>
     <div id="log"></div>
   </div>
 
@@ -481,28 +483,34 @@ function slimSlates(){
     games:x.games.map(g=>({label:g.label, away:g.away, home:g.home, ms:g.ms, src:g.src, started:g.started, teams:g.teams})),
     contests:x.contests.map(c=>({name:c.name, fee:c.fee, entries:c.entries, id:c.id}))}));
 }
+function syncStatus(msg, bad){ const el=document.getElementById('syncStatus'); el.textContent='Sync: '+msg; el.classList.toggle('warn', !!bad); }
+const nowStr = () => fmtTime(Date.now());
 async function pushSync(){
   const t = syncTopic(); if(!t) return;
+  if(!LS.get('changedAt',0)) LS.set('changedAt', Date.now());
   try{
     const body = await pack({v:1, at:LS.get('changedAt',0), slates:slimSlates()});
     const r = await fetch(`https://ntfy.sh/${encodeURIComponent(t)}?priority=1`, {method:'POST', body});
-    if(r.ok) LS.set('pushedAt', Date.now());
-  }catch(e){ log('Sync upload failed: '+e.message); }
+    if(r.ok){ LS.set('pushedAt', Date.now()); { const n=Object.keys(slates).length; syncStatus(`shared ${n} slate${n==1?"":"s"} at ${nowStr()}.`); }; }
+    else syncStatus(`sharing failed (ntfy ${r.status}).`, true);
+  }catch(e){ syncStatus('sharing failed: '+e.message, true); }
 }
 function changed(){ LS.set('changedAt', Date.now()); pushSync(); }
-async function pullSync(){
-  const t = syncTopic(); if(!t) return;
+async function pullSync(force){
+  const t = syncTopic(); if(!t){ syncStatus('enter your ntfy topic to share slates between devices.'); return; }
   try{
     const txt = await (await fetch(`https://ntfy.sh/${encodeURIComponent(t)}/json?poll=1&since=24h`)).text();
     const msgs = txt.split('\n').filter(Boolean).map(l=>JSON.parse(l)).filter(m=>m.event=='message' && m.message);
     let best=null;
     for(const m of msgs){ try{ const d=await unpack(m.message); if(d.v==1 && (!best || d.at>best.at)) best=d; }catch(e){} }
-    if(best && best.at > LS.get('changedAt',0)){
+    const local = LS.get('changedAt',0), haveLocal = Object.keys(slates).length>0;
+    if(best && (best.at > local || (!haveLocal && best.slates.length))){
       slates = Object.fromEntries(best.slates.map(x=>[x.key,x])); LS.set('changedAt', best.at);
-      save(); render(); log(`Synced ${best.slates.length} slate${best.slates.length==1?'':'s'} from your other device.`);
+      save(); render(); syncStatus(`got ${best.slates.length} slate${best.slates.length==1?'':'s'} from your other device at ${nowStr()}.`);
       if(LS.get('autoSchedule', false)) scheduleAlerts(true);
-    } else if(Object.keys(slates).length && Date.now()-LS.get('pushedAt',0) > 6*3600e3 && LS.get('changedAt',0) >= (best?.at||0)) pushSync();
-  }catch(e){ log('Sync check failed: '+e.message); }
+    } else if(haveLocal && (force || Date.now()-LS.get('pushedAt',0) > 6*3600e3) && local >= (best?.at||0)) await pushSync();
+    else syncStatus(best ? `up to date (checked ${nowStr()}).` : (haveLocal ? `up to date (checked ${nowStr()}).` : `nothing shared yet. Open the page on the device that has your slates.`));
+  }catch(e){ syncStatus('check failed: '+e.message, true); }
 }
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) pullSync(); });
 
@@ -569,6 +577,7 @@ document.getElementById('test').onclick = async ()=>{
   LS.set('topic', topic);
   try{ await ntfy(topic,'Slate alerts connected','Test from your slate schedule page.'); log('Test sent.'); }catch(e){ log('Test failed: '+e.message); }
 };
+document.getElementById('syncNow').onclick = ()=>pullSync(true);
 document.getElementById('clear').onclick = ()=>{ slates={}; save(); render(); changed(); };
 render();
 (async()=>{
