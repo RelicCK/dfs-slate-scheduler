@@ -22,7 +22,7 @@ h1{font-size:22px;margin:4px 0 2px}
 body.over main{outline:3px dashed var(--accent);outline-offset:-6px}
 button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-input[type=text],input[type=number],input[type=time]{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+input[type=text],input[type=number],input[type=time],select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .muted{color:var(--muted)}
 .small{font-size:13px}
@@ -125,6 +125,9 @@ table.sched td:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:n
       <button id="clear">Clear slates</button>
     </div>
     <label class="row" style="margin-top:8px"><input type="checkbox" id="desk"> Desktop alerts with sound on this device <span class="small muted">(while this page is open)</span></label>
+    <div class="row" style="margin-top:6px"><label>Sound <select id="sound"><option value="chime">Chime</option><option value="bell">Bell</option><option value="ding">Ding-dong</option><option value="alarm">Alarm</option><option value="pulse">Rising pulse</option><option value="ping">Soft ping</option><option value="none">No sound</option></select></label>
+      <label>Volume <input type="range" id="vol" min="0.05" max="1" step="0.05" style="width:100px"></label>
+      <button id="preview">▶ Preview</button></div>
     <div class="small muted" style="margin-top:8px">Add your DK and FD entry CSVs with the button above, or drag them anywhere onto the page. All times Eastern.</div>
     <div id="log"></div>
   </div>
@@ -637,16 +640,27 @@ document.getElementById('topic').onchange = e=>{ LS.set('topic', e.target.value.
 // Listens to your ntfy alert topic while the page is open and shows a system notification with a chime.
 // Per device, so the phone (which has the ntfy app) can leave it off.
 let es = null, audio = null;
-function chime(){
+// each sound: list of [frequency Hz, start s, length s, wave]
+const SOUNDS = {
+  chime: [[880,0,.16,'sine'],[1320,.18,.16,'sine'],[880,.36,.16,'sine']],
+  bell:  [[1046,0,1.2,'sine'],[2093,0,.8,'sine'],[1568,0,.6,'triangle']],
+  ding:  [[988,0,.45,'sine'],[784,.45,.7,'sine']],
+  alarm: [[1000,0,.12,'square'],[1000,.2,.12,'square'],[1000,.4,.12,'square'],[1000,.8,.12,'square'],[1000,1,.12,'square'],[1000,1.2,.12,'square']],
+  pulse: [[523,0,.12,'triangle'],[659,.15,.12,'triangle'],[784,.3,.12,'triangle'],[1047,.45,.3,'triangle']],
+  ping:  [[1760,0,.35,'sine']],
+  none:  []
+};
+function chime(name){
   try{
     audio ||= new (window.AudioContext||window.webkitAudioContext)();
     if(audio.state=='suspended') audio.resume();
-    const t0 = audio.currentTime;
-    [[880,0],[1320,0.18],[880,0.36]].forEach(([f,dt])=>{
-      const o=audio.createOscillator(), g=audio.createGain(); o.type='sine'; o.frequency.value=f;
-      g.gain.setValueAtTime(0.0001,t0+dt); g.gain.exponentialRampToValueAtTime(0.35,t0+dt+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t0+dt+0.16);
-      o.connect(g).connect(audio.destination); o.start(t0+dt); o.stop(t0+dt+0.17);
-    });
+    const t0 = audio.currentTime, vol = +LS.get('vol', 0.5);
+    for(const [f,dt,len,type] of SOUNDS[name || LS.get('sound','chime')] || SOUNDS.chime){
+      const o=audio.createOscillator(), g=audio.createGain(); o.type=type; o.frequency.value=f;
+      const peak = Math.max(0.0002, vol * (type=='square' ? 0.25 : 0.6));
+      g.gain.setValueAtTime(0.0001,t0+dt); g.gain.exponentialRampToValueAtTime(peak,t0+dt+0.015); g.gain.exponentialRampToValueAtTime(0.0001,t0+dt+len);
+      o.connect(g).connect(audio.destination); o.start(t0+dt); o.stop(t0+dt+len+0.02);
+    }
   }catch(e){}
 }
 function startDesk(){
@@ -665,6 +679,11 @@ function startDesk(){
     log((m.title||'Alert')+' (desktop alert)');
   };
 }
+const soundSel = document.getElementById('sound'), volIn = document.getElementById('vol');
+soundSel.value = LS.get('sound','chime'); volIn.value = LS.get('vol',0.5);
+soundSel.onchange = ()=>{ LS.set('sound', soundSel.value); chime(); };
+volIn.onchange = ()=>{ LS.set('vol', +volIn.value); chime(); };
+document.getElementById('preview').onclick = ()=>chime();
 const deskBox = document.getElementById('desk');
 deskBox.checked = LS.get('desk', false);
 deskBox.onchange = async ()=>{
