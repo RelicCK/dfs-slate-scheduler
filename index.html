@@ -316,6 +316,9 @@ function slateEvents(s){
   return ts.map((t,i)=>({t, games:byT[t], kind: (i==0 && !started) ? 'first' : (i==ts.length-1 ? 'last' : 'swap'), slate:s}));
 }
 function allEvents(){ return Object.values(slates).flatMap(slateEvents).sort((a,b)=>a.t-b.t); }
+// within one time: by sport, then First Lock before Late Swap, then site
+const kindRank = e => e.kind=='first' ? 0 : 1;
+const bySportKind = (a,b) => a.slate.sport.localeCompare(b.slate.sport) || kindRank(a)-kindRank(b) || a.slate.site.localeCompare(b.slate.site);
 const kindLabel = e => e.kind=='first' ? 'First Lock' : 'Late Swap';
 
 // ---------- render ----------
@@ -357,6 +360,7 @@ function render(){
   const tl = document.getElementById('timeline'); const ev = allEvents().filter(e=>e.t > now - 6*3600e3);
   document.getElementById('timelineCard').hidden = !ev.length;
   const byT = {}; for(const e of ev) (byT[e.t] ||= []).push(e);
+  for(const k in byT) byT[k].sort(bySportKind);
   const nextT = ev.find(e=>e.t>now)?.t;
   let lastDay = '';
   tl.innerHTML = Object.entries(byT).sort((a,b)=>a[0]-b[0]).map(([t,es])=>{
@@ -391,15 +395,24 @@ async function scheduleAlerts(){
   const sent = LS.get('sent', {});
   const now = Date.now();
   // one alert per time and kind: "Lock" and "Late Swap" are sent separately
-  const byT = {}; for(const e of allEvents()) if(e.t>now) (byT[e.t+'|'+kindLabel(e)] ||= []).push(e);
+  // one alert per time, sectioned by sport, First Locks before Late Swaps
+  const byT = {}; for(const e of allEvents()) if(e.t>now) (byT[e.t] ||= []).push(e);
   let n=0, skipped=0;
-  for(const [tk,es] of Object.entries(byT)){
-    const [t, kind] = tk.split('|');
-    const id = topic+'|'+lead+'|'+t+'|'+kind+'|'+es.map(e=>e.slate.key).sort().join(';');
+  for(const [t,es] of Object.entries(byT)){
+    es.sort(bySportKind);
+    const kinds = [...new Set(es.map(kindLabel))];
+    const kind = kinds.join(' + ');
+    const id = topic+'|'+lead+'|'+t+'|grouped|'+es.map(e=>e.slate.key).sort().join(';');
     if(sent[id]){ skipped++; continue; }
     const sendAt = +t - lead*60e3;
     const title = `${kind} at ${fmtTime(+t)} ET`;
-    const body = es.map(e=>slateName(e.slate) + (e.slate.games.length>2 ? ` (${e.games.join(', ')})` : '')).join('\n');
+    const lines = []; let lastSport = '', lastKind = '';
+    for(const e of es){
+      if(e.slate.sport!==lastSport){ if(lines.length) lines.push(''); lines.push(e.slate.sport); lastSport=e.slate.sport; lastKind=''; }
+      if(kindLabel(e)!==lastKind){ lines.push(' '+kindLabel(e)+':'); lastKind=kindLabel(e); }
+      lines.push(`  • ${e.slate.site} ${e.slate.type} · ${slateDetail(e.slate)}` + (e.slate.games.length>2 ? ` (${e.games.join(', ')})` : ''));
+    }
+    const body = lines.join('\n');
     try{
       await ntfy(topic, title, body, sendAt > now + 15e3 ? Math.floor(sendAt/1000) : null);
       sent[id] = Date.now(); n++;
