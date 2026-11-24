@@ -309,7 +309,8 @@ const kindLabel = e => e.kind=='first' ? (e.slate.type=='Classic' ? 'First lock'
 function render(){
   prune();
   const el = document.getElementById('slates'); el.innerHTML='';
-  const list = Object.values(slates).sort((a,b)=>(slateEvents(a)[0]?.t||0)-(slateEvents(b)[0]?.t||0));
+  const startKey = x => x.games.some(g=>g.started) ? 0 : (slateEvents(x)[0]?.t||0); // slates already underway first
+  const list = Object.values(slates).sort((a,b)=>startKey(a)-startKey(b));
   const now = Date.now();
   for(const s of list){
     const ev = slateEvents(s); const nextT = ev.find(e=>e.t>now)?.t;
@@ -317,10 +318,9 @@ function render(){
     const when = t => multiDay ? new Date(t).toLocaleDateString('en-US',{timeZone:TZ,weekday:'short'})+' '+fmtTime(t) : fmtTime(t);
     const d = document.createElement('div'); d.className='card';
     const entries = s.contests.reduce((n,c)=>n+c.entries,0);
-    d.innerHTML = `<div class="slate-h"><div><span class="pill ${s.site}">${s.site=='DK'?'DraftKings':'FanDuel'}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <strong>${slateDetail(s)}</strong> <span class="muted small">${ev[0]?fmtDay(ev[0].t):''} · ${entries} entries</span></div><button class="x" title="Remove">✕</button></div>`;
+    d.innerHTML = `<div class="slate-h"><div><span class="pill ${s.site}">${s.site=='DK'?'DraftKings':'FanDuel'}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <strong>${slateDetail(s)}</strong> <span class="muted small">${s.games.some(g=>g.started)?'Underway':(ev[0]?fmtDay(ev[0].t):'')} · ${entries} entries</span></div><button class="x" title="Remove">✕</button></div>`;
     const t = document.createElement('table');
-    t.innerHTML = '<tr><th>Start</th><th>Games</th><th></th></tr>' + ev.map(e=>`<tr class="${e.t<now?'past':''} ${e.t==nextT?'next':''}"><td class="t">${when(e.t)}</td><td>${e.games.join(', ')}</td><td class="tag ${e.kind}">${kindLabel(e)}</td></tr>`).join('')
-      + s.games.filter(g=>g.started).map(g=>`<tr class="past"><td class="t">Earlier</td><td>${g.label=='Final'?'Game(s) already played':g.label}</td><td class="tag">Locked</td></tr>`).join('');
+    t.innerHTML = '<tr><th>Start</th><th>Games</th><th></th></tr>' + s.games.filter(g=>g.started).map(g=>`<tr class="past"><td class="t">Earlier</td><td>${g.label=='Final'?'Game(s) already played':g.label}</td><td class="tag">Locked</td></tr>`).join('') + ev.map(e=>`<tr class="${e.t<now?'past':''} ${e.t==nextT?'next':''}"><td class="t">${when(e.t)}</td><td>${e.games.join(', ')}</td><td class="tag ${e.kind}">${kindLabel(e)}</td></tr>`).join('');
     const missing = s.games.filter(g=>!g.ms && !g.started);
     for(const g of missing){
       const tr=document.createElement('tr');
