@@ -316,7 +316,7 @@ function slateEvents(s){
   return ts.map((t,i)=>({t, games:byT[t], kind: (i==0 && !started) ? 'first' : (i==ts.length-1 ? 'last' : 'swap'), slate:s}));
 }
 function allEvents(){ return Object.values(slates).flatMap(slateEvents).sort((a,b)=>a.t-b.t); }
-const kindLabel = e => e.kind=='first' ? (e.slate.type=='Classic' ? 'First lock' : 'Lock') : (e.kind=='last' ? 'Last late swap' : 'Late swap');
+const kindLabel = e => e.kind=='first' ? 'Lock' : 'Late Swap';
 
 // ---------- render ----------
 function render(){
@@ -390,15 +390,16 @@ async function scheduleAlerts(){
   LS.set('topic', topic); LS.set('lead', lead);
   const sent = LS.get('sent', {});
   const now = Date.now();
-  const byT = {}; for(const e of allEvents()) if(e.t>now) (byT[e.t] ||= []).push(e);
+  // one alert per time and kind: "Lock" and "Late Swap" are sent separately
+  const byT = {}; for(const e of allEvents()) if(e.t>now) (byT[e.t+'|'+kindLabel(e)] ||= []).push(e);
   let n=0, skipped=0;
-  for(const [t,es] of Object.entries(byT)){
-    const id = topic+'|'+lead+'|'+t+'|'+es.map(e=>e.slate.key).sort().join(';');
+  for(const [tk,es] of Object.entries(byT)){
+    const [t, kind] = tk.split('|');
+    const id = topic+'|'+lead+'|'+t+'|'+kind+'|'+es.map(e=>e.slate.key).sort().join(';');
     if(sent[id]){ skipped++; continue; }
     const sendAt = +t - lead*60e3;
-    const first = es.some(e=>e.kind=='first');
-    const title = `${first?'Lock':'Late swap'} at ${fmtTime(+t)} ET`;
-    const body = es.map(e=>`${slateName(e.slate)}: ${kindLabel(e).toLowerCase()}` + (e.slate.games.length>2 ? ` (${e.games.join(', ')})` : '')).join('\n');
+    const title = `${kind} at ${fmtTime(+t)} ET`;
+    const body = es.map(e=>slateName(e.slate) + (e.slate.games.length>2 ? ` (${e.games.join(', ')})` : '')).join('\n');
     try{
       await ntfy(topic, title, body, sendAt > now + 15e3 ? Math.floor(sendAt/1000) : null);
       sent[id] = Date.now(); n++;
