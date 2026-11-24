@@ -105,6 +105,8 @@ button.chk.wide{width:auto;height:auto;padding:2px 8px;font-size:12px;color:var(
 button.chk.wide.on{color:#fff}
 tr.isdone td, .isdone{opacity:.55}
 tr.isdone td:nth-child(2), .isdone .muted{text-decoration:line-through}
+.actr{display:flex;align-items:center;gap:10px}
+.actr button.chk{margin-right:5px}
 .okdone{color:var(--dk);font-weight:700}
 .gtick.tdone{background:var(--dk)!important;opacity:1}
 button.gtick{padding:0;cursor:pointer;color:#fff;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:3}
@@ -437,11 +439,11 @@ function render(){
     const link = s.site=='DK' ? 'https://www.draftkings.com/mycontests' : 'https://www.fanduel.com/upcoming';
     const single = ev.filter(e=>e.t>now).length==1 && !s.games.some(g=>g.started) && ev.length==1;
     const action = next
-      ? `<span class="act ${next.kind}">${kindLabel(next)} ${when(next.t)}</span> <span class="cd">${inStr(next.t-now)}</span>${next.games.length && s.games.length>1 && ev.length>1 ? ` <span class="muted">· ${next.games.join(', ')}</span>`:''}` + (single ? ` ${doneBtn(s,next.t,true)}` : '')
-      : anyFuture ? `<span class="okdone">✓ Lineups done</span>` + (single ? ` ${doneBtn(s, ev[ev.length-1].t, true)}` : '')
+      ? `<span class="act ${next.kind}">${kindLabel(next)} ${when(next.t)}</span> <span class="cd">${inStr(next.t-now)}</span>${next.games.length && s.games.length>1 && ev.length>1 ? ` <span class="muted">· ${next.games.join(', ')}</span>`:''}`
+      : anyFuture ? `<span class="okdone">✓ Lineups done</span>` + (single ? ` <span class="muted">· ${kindLabel(ev[ev.length-1])} ${when(ev[ev.length-1].t)}</span>` : '')
       : `<span class="muted">All games started</span>`;
     d.innerHTML = `<div class="slate-h"><div class="sh-title"><span class="pill ${s.site}">${s.site}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <strong>${slateDetail(s)}</strong></div><button class="x" title="Remove">✕</button></div>
-      <div class="actbar"><div>${action}</div><a class="open" href="${link}" target="_blank" rel="noopener">Open ${s.site} ↗</a></div>`;
+      <div class="actbar"><div>${action}</div><div class="actr"><a class="open" href="${link}" target="_blank" rel="noopener">Open ${s.site} ↗</a>${single ? doneBtn(s, ev[0].t) : ''}</div></div>`;
     const t = document.createElement('table'); t.className='sched';
     t.innerHTML = '<colgroup><col class="c1"><col><col class="c3"><col class="c4"></colgroup>';
     // rows: collapse everything already locked into one line, show what's left
