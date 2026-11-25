@@ -731,11 +731,11 @@ function slimSlates(){
     contests:x.contests.map(c=>({name:c.name, fee:c.fee, entries:c.entries})), done:x.done, notes:x.notes}));
 }
 function syncStatus(msg, bad){ const el=document.getElementById('syncStatus');
-  // count locks (one per slate per lock time) that haven't passed, and how many of those are marked done
-  const now=Date.now(); let locks=0, marks=0;
-  for(const x of Object.values(slates)) for(const e of slateEvents(x)) if(e.t>now){ locks++; if(isDone(x,e.t)) marks++; }
+  // today's locks (one per slate per lock time), and how many of those are marked done
+  const today=todayKey(); let locks=0, marks=0;
+  for(const x of Object.values(slates)) for(const e of slateEvents(x)) if(etDateKey(e.t)==today){ locks++; if(isDone(x,e.t)) marks++; }
   const topic = (document.getElementById('topic').value||'').trim();
-  el.textContent='Sync: '+msg+(topic?` · topic "${topic}" · ${locks} lock${locks==1?'':'s'}, ${marks} ✓`:''); el.classList.toggle('warn', !!bad); }
+  el.textContent='Sync: '+msg+(topic?` · topic "${topic}" · ${locks} lock${locks==1?'':'s'} today, ${marks} ✓`:''); el.classList.toggle('warn', !!bad); }
 const nowStr = () => fmtTime(Date.now());
 async function pushSync(){
   const t = syncTopic(); if(!t) return;
