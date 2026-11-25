@@ -291,13 +291,17 @@ VIEWS.overview = () => {
   const v = (x,d,sx) => ok(x) ? (d===0 ? int(x) : x.toFixed(d))+sx : '—';
   const others = players.slice(1);
   const shown = cmpRows;
-  h += `<div class="card"><h3>${esc(me()||'You')} vs tracked players and the field</h3>${you ? `<div class="tw free"><table><thead><tr><th>Stat</th><th class="n">${esc(me())}</th><th class="n">Field</th><th class="n" title="${esc(me())} − field">Diff</th>${others.map(p=>`<th class="n">${esc(p.u)}</th>`).join('')}</tr></thead><tbody>${shown.map(([l,get,d,sx,dir,tip])=>{
+  const dfFmt = (a,b,d,sx,dir) => { const df = ok(a)&&ok(b) ? a-b : null; if(!ok(df)) return {t:'—', c:''};
+    return {t:(df>0?'+':'')+(d===0?Math.round(df):df.toFixed(d))+(sx==='%'?' pp':sx), c: !dir || Math.abs(df)<1e-9 ? '' : (df*dir>0 ? 'pos' : 'neg')}; };
+  h += `<div class="card"><h3>${esc(me()||'You')} vs tracked players and the field</h3>${you ? `<div class="tw free" style="display:inline-block;max-width:100%"><table class="cmp"><thead><tr><th>Stat</th><th class="n">${esc(me())}</th><th class="n">Field</th><th class="n" title="${esc(me())} − field">Diff</th>${others.map(p=>`<th class="n">${esc(p.u)}</th>`).join('')}</tr></thead><tbody>${shown.map(([l,get,d,sx,dir,tip])=>{
       if(get==='win'){ const inp = p => p.m ? `<input type="number" class="sm" data-win="${esc(C.baseUser(p.u))}" value="${S.winnings[C.baseUser(p.u)]??''}" step="any" min="0" style="width:88px" placeholder="optional">` : '';
         return `<tr><td title="${esc(tip)}">${l}</td><td class="n">${inp(players[0])}</td><td class="n muted">—</td><td></td>${others.map(p=>`<td class="n">${inp(p)}</td>`).join('')}</tr>`; }
-      const y = get(you), fl = get(field), df = ok(y)&&ok(fl) ? y-fl : null;
-      const c = !dir || !ok(df) || Math.abs(df)<1e-9 ? '' : (df*dir>0 ? 'pos' : 'neg');
-      return `<tr><td ${tip?`title="${esc(tip)}"`:''}>${l}</td><td class="n"><b>${v(y,d,sx)}</b></td><td class="n">${v(fl,d,sx)}</td><td class="n ${c}">${l==='Entries'||l==='Distinct builds' ? '' : ok(df) ? (df>0?'+':'')+(d===0?Math.round(df):df.toFixed(d))+(sx==='%'?' pp':sx) : '—'}</td>${others.map(p=>`<td class="n">${p.m ? v(get(p.m),d,sx) : (l==='Entries' ? 'not entered' : '')}</td>`).join('')}</tr>`; }).join('')}</tbody></table></div>
-    <div class="note">Field figures count every valid field entry once, the same way players' do. Diff is ${esc(me())} − field: green is better for you (more unique, higher projection, less given up), red is worse. pp = percentage points. Est. ROI needs the entry fee; type real winnings to get exact ROI.</div>` : `<div class="muted small">${esc(me()||'Your username')} has no entries in this contest.</div>`}</div>`;
+      const y = get(you), fl = get(field), noDiff = l==='Entries'||l==='Distinct builds', fd = dfFmt(y,fl,d,sx,dir);
+      const pcell = p => { if(!p.m) return l==='Entries' ? '<span class="muted">not entered</span>' : '';
+        const pv = get(p.m), pd = dfFmt(y,pv,d,sx,dir);
+        return `${v(pv,d,sx)}${!noDiff&&ok(pv)&&ok(y) ? `<div class="vs ${pd.c}" title="${esc(me())} − ${esc(p.u)}">${pd.t}</div>` : ''}`; };
+      return `<tr><td ${tip?`title="${esc(tip)}"`:''}>${l}</td><td class="n"><b>${v(y,d,sx)}</b></td><td class="n">${v(fl,d,sx)}</td><td class="n ${noDiff?'':fd.c}">${noDiff ? '' : fd.t}</td>${others.map(p=>`<td class="n">${pcell(p)}</td>`).join('')}</tr>`; }).join('')}</tbody></table></div>
+    <div class="note">Field figures count every valid field entry once, the same way players' do. Diff is ${esc(me())} − field, and the small line under each player is ${esc(me())} − that player: green is better for you (more unique, higher projection, less given up), red is worse. pp = percentage points. Est. ROI needs the entry fee; type real winnings to get exact ROI.</div>` : `<div class="muted small">${esc(me()||'Your username')} has no entries in this contest.</div>`}</div>`;
   const rows = [['Field, per entry', C.dupeStats(times.map(t=>t-1))], ['Field, per distinct build', C.dupeStats(A.glist.map(g=>g.count-1))]];
   for(const u of trackedList()){ const m = userMetrics(u); rows.push([u+(u===me()?' (you)':''), m && m.n ? m.dupes : null]); }
   h += `<div class="grid2"><div class="card"><h3>Field: times played</h3>${distBars(times)}<div class="note">Share of valid field entries whose exact lineup was played that many times (including themselves).</div></div>
