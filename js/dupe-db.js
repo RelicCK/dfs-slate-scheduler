@@ -1,4 +1,4 @@
-/* Contest Analytics: history database (IndexedDB) with versioned schema, backup and restore.
+/* Dupe Checker: history database (IndexedDB) with versioned schema, backup and restore.
 
    Database "dfsContestAnalytics" (separate from the scheduler's localStorage; never touches it).
    Stores (schema v1):
@@ -98,7 +98,7 @@ async function persist(){ try{ return navigator.storage && navigator.storage.per
 // ---------- backup ----------
 async function exportBackup(){
   const contests = await listContests(), legacy = await getAll('legacy'), sources = await getAll('sources'), settings = await getSettings();
-  const obj = {format: BACKUP_FORMAT, version: BACKUP_VERSION, dbVersion: DB_VERSION, app: 'Slate Locks · Contest Analytics', exportedAt: new Date().toISOString(),
+  const obj = {format: BACKUP_FORMAT, version: BACKUP_VERSION, dbVersion: DB_VERSION, app: 'Slate Locks · Dupe Checker', exportedAt: new Date().toISOString(),
     settings, contests, legacy, sources: sources.map(s=>({...s, bytes: b64(s.bytes)}))};
   const gz = new Blob([JSON.stringify(obj)]).stream().pipeThrough(new CompressionStream('gzip'));
   return {blob: await new Response(gz).blob(), counts: {contests: contests.length, legacy: legacy.length, sources: sources.length}};

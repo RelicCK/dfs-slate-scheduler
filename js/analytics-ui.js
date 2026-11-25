@@ -1,4 +1,4 @@
-/* Contest Analytics page. Calculations live in dupe-core.js, storage in dupe-db.js. */
+/* Dupe Checker page. Calculations live in dupe-core.js, storage in dupe-db.js. */
 (function(){
 'use strict';
 const C = window.DupeCore, DB = window.DupeDB;
@@ -13,6 +13,8 @@ const money = v => ok(v) ? '$'+v.toLocaleString('en-US',{minimumFractionDigits:2
 const int = v => ok(v) ? Math.round(v).toLocaleString() : '—';
 const cls = v => ok(v) ? (v>0?'pos':v<0?'neg':'') : '';
 const LETTERS = 'ABCDEFGHIJ';
+const DEFAULT_RAKE = 13; // % estimate when no prize pool or rake is entered for a contest
+const rakeOf = m => ok(m.rakePct) ? m.rakePct : DEFAULT_RAKE;
 const STRATS = ['', 'P90 Spread', 'ROI dupe mitigation', 'Top 1% (no mitigation)', 'Projection', 'Other'];
 
 // ---------- state ----------
@@ -50,7 +52,7 @@ function payNote(){
   if(!A){ el.textContent=''; return; }
   if(!A.table){ el.innerHTML = 'Enter the entry fee to estimate payouts and ROI. Without it ROI shows "—", never 0.'; return; }
   const t = A.table;
-  el.innerHTML = `Estimated payouts: pool ${money(t.pool)} ${S.meta.prizePool ? '(entered)' : `= ${int(A.fieldSize)} entries × ${money(A.fee)}${S.meta.rakePct ? ` − ${S.meta.rakePct}% rake` : ', assuming no rake'}`}. ${int(t.paid)} paid (20%), 1st ${money(t.first)} (30%), min cash ${money(t.minCash)}. ${t.notes.map(esc).join(' ')}`;
+  el.innerHTML = `Estimated payouts: pool ${money(t.pool)} ${S.meta.prizePool ? '(entered)' : `= ${int(A.fieldSize)} entries × ${money(A.fee)} − ${rakeOf(S.meta)}% rake${ok(S.meta.rakePct) ? '' : ' (default estimate)'}`}. ${int(t.paid)} paid (20%), 1st ${money(t.first)} (30%), min cash ${money(t.minCash)}. ${t.notes.map(esc).join(' ')}`;
 }
 function renderFiles(){
   const set = (id, name, sub) => { const el=$(id); el.classList.toggle('ok', !!name); const fn=el.querySelector('.fn'); fn.textContent = name || sub; fn.title = name || ''; fn.classList.toggle('muted', !name); };
@@ -153,7 +155,7 @@ $('#clearAll').onclick = ()=>{ Object.assign(S, {stdText:null, stdFile:'', std:n
 function recompute(){
   if(!S.std){ S.A=null; S.setRes=[]; return; }
   const t0 = performance.now();
-  S.A = C.analyzeContest(S.std, S.proj, {fee:S.meta.fee, prizePool:S.meta.prizePool, rakePct:S.meta.rakePct, overrides:S.overrides});
+  S.A = C.analyzeContest(S.std, S.proj, {fee:S.meta.fee, prizePool:S.meta.prizePool, rakePct:rakeOf(S.meta), overrides:S.overrides});
   S.setRes = S.sets.map(s=>s.parsed ? C.setMetrics(S.A, s.parsed) : null);
   S.userCache = new Map();
   const ms = Math.round(performance.now()-t0);
@@ -569,7 +571,7 @@ function contestRecord(){
     return {slot:i, name:s.name, strategy:s.strategy, mitigation:s.mitigation, version:s.version, fileName:s.fileName, sourceHash:h}; }).filter(Boolean);
   const record = {id: contestKey(), schema:1, site:m.site, sport:m.sport, format:S.std.format, date:m.date, name:m.name, contestId:m.contestId,
     fieldSize:A.fieldSize, validEntries:A.valid.length, skipped:S.std.skipped.length, fee:m.fee, prizePool:m.prizePool, rakePct:m.rakePct,
-    payoutModel: A.table ? {kind:'estimated DK curve v1', pool:A.table.pool, paid:A.table.paid, firstShare:.3, paidShare:.2, minCashX:1.5, alpha:A.table.alpha, rakePct:m.rakePct||0, prizePoolEntered:!!m.prizePool} : null,
+    payoutModel: A.table ? {kind:'estimated DK curve v1', pool:A.table.pool, paid:A.table.paid, firstShare:.3, paidShare:.2, minCashX:1.5, alpha:A.table.alpha, rakePct:m.prizePool ? null : rakeOf(m), prizePoolEntered:!!m.prizePool} : null,
     winnings:S.winnings, overrides:S.overrides,
     sources:{standings:sources[0].hash, projections: S.projText ? sources[1].hash : null}, files:{standings:S.stdFile, projections:S.projFile},
     sets, summary: contestSummary()};

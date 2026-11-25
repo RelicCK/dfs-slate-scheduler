@@ -1,4 +1,4 @@
-/* Contest Analytics: calculation core (no DOM, no storage).
+/* Dupe Checker: calculation core (no DOM, no storage).
    Loaded by analytics.html in the browser and by tests/run-tests.js in Node.
 
    Definitions kept from the original DFS Dupe Checker, tightened where the
@@ -23,7 +23,7 @@
 */
 (function(root){
 'use strict';
-const CALC_VERSION = 1;
+const CALC_VERSION = 2; // 2: default 13% rake estimate in the UI
 
 // ---------- CSV ----------
 function parseCSV(text){
@@ -220,7 +220,7 @@ function parseLineupSet(text, fileName){
 
 // ---------- payouts ----------
 /* Estimated DraftKings-style payout table (the actual payout structure isn't in the standings file).
-   pool   = prize pool if given, else fieldSize x fee x (1 - rake). Default rake 0 (no rake), stated in the UI.
+   pool   = prize pool if given, else fieldSize x fee x (1 - rake). The page defaults to a 13% rake estimate, stated in the UI.
    paid   = floor(20% of field), at least 1.  1st = 30% of pool.  Min cash = 1.5 x fee.
    ranks 2..paid: minCash x (paid / r)^alpha, alpha solved so ranks 2..paid total the other 70%
    (the power curve from the original Dupe Checker; the last paid rank gets exactly the min cash).
