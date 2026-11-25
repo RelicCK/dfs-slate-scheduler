@@ -114,6 +114,10 @@ tr.isdone td:nth-child(2), .isdone .muted{text-decoration:line-through}
 .actr button.chk{margin-right:5px}
 .okdone{color:var(--dk);font-weight:700}
 .gtick.tdone{background:var(--dk)!important;opacity:1}
+.gtick.tneed{background:#f5a524!important;opacity:1;color:#000;font-weight:800}
+button.chk.need{background:#f5a524;border-color:#f5a524;color:#000;font-weight:800}
+tr.isneed td:nth-child(2), .tle.isneed .muted{color:#f5a524;font-weight:600}
+.needtag{background:#f5a524;color:#000;font-weight:700;border-radius:6px;padding:1px 6px}
 button.gtick{padding:0;cursor:pointer;color:#fff;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:3}
 button.gtick:hover{transform:scale(1.15)}
 @media (max-width:480px){table.sched col.c1{width:92px}table.sched col.c3{width:76px}}
@@ -414,13 +418,24 @@ function allEvents(){ return Object.values(slates).flatMap(slateEvents).sort((a,
 const kindRank = e => e.kind=='first' ? 0 : 1;
 const bySportKind = (a,b) => a.slate.sport.localeCompare(b.slate.sport) || kindRank(a)-kindRank(b) || a.slate.site.localeCompare(b.slate.site);
 // lineups-done marks live on the slate (s.done[lockTime]) so they sync with it
-const isDone = (s,t) => !!(s.done && s.done[t] > 0); // >0 done at that time, <0 undone at that time (so undo syncs too)
-const doneBtn = (s,t,wide) => `<button class="chk ${isDone(s,t)?'on':''} ${wide?'wide':''}" data-key="${encodeURIComponent(s.key)}" data-t="${t}" title="${isDone(s,t)?'Undo: mark lineups not done':'Mark lineups done'}">${isDone(s,t)?'✓'+(wide?' Done · undo':''):(wide?'Mark done':'')}</button>`;
+// lock marks live on the slate (s.done[lockTime]) so they sync with it.
+// Value = time*10 + state (0 clear, 1 swap needed, 2 done); older saves used +time = done, -time = cleared.
+const markOf = v => !v ? {at:0, st:0} : v<0 ? {at:-v, st:0} : v>=1e13 ? {at:Math.floor(v/10), st:v%10} : {at:v, st:2};
+const markState = (s,t) => markOf(s.done && s.done[t]).st;
+const isDone = (s,t) => markState(s,t)==2;
+const isNeeded = (s,t) => markState(s,t)==1;
+const kindAt = (s,t) => slateEvents(s).find(e=>e.t==+t)?.kind;
+const markTitle = (s,t) => { const st=markState(s,t), late=kindAt(s,t)!='first';
+  return st==2 ? 'Done. Tap to clear' : st==1 ? 'Swap needed. Tap when the swap is done' : late ? 'Tap to flag a swap needed (tap again when done)' : 'Tap to mark lineups done'; };
+const doneBtn = (s,t) => { const st=markState(s,t);
+  return `<button class="chk ${st==2?'on':st==1?'need':''}" data-key="${encodeURIComponent(s.key)}" data-t="${t}" title="${markTitle(s,t)}">${st==2?'✓':st==1?'!':''}</button>`; };
 document.addEventListener('click', ev=>{
   const b = ev.target.closest('button.chk, button.gtick'); if(!b) return;
   const s = slates[decodeURIComponent(b.dataset.key)]; if(!s) return;
-  s.done ||= {}; const t = b.dataset.t;
-  s.done[t] = isDone(s,t) ? -Date.now() : Date.now();
+  s.done ||= {}; const t = b.dataset.t, st = markState(s,t);
+  // Late Swaps: empty -> swap needed -> done -> empty. First Locks: empty -> done -> empty.
+  const nextSt = kindAt(s,t)=='first' ? (st==2?0:2) : (st+1)%3;
+  s.done[t] = Date.now()*10 + nextSt;
   save(); render(); changed();
 });
 const kindLabel = e => e.kind=='first' ? 'First Lock' : 'Late Swap';
@@ -443,8 +458,9 @@ function render(){
     const entries = s.contests.reduce((n,c)=>n+c.entries,0);
     const link = s.site=='DK' ? 'https://www.draftkings.com/mycontests' : 'https://www.fanduel.com/upcoming';
     const single = ev.filter(e=>e.t>now).length==1 && !s.games.some(g=>g.started) && ev.length==1;
+    const needed = ev.filter(e=>e.t>now && isNeeded(s,e.t));
     const action = next
-      ? `<span class="act ${next.kind}">${kindLabel(next)} ${when(next.t)}</span> <span class="cd">${inStr(next.t-now)}</span>${next.games.length && s.games.length>1 && ev.length>1 ? ` <span class="muted">· ${next.games.join(', ')}</span>`:''}`
+      ? (needed.length ? `<span class="needtag">! Swap needed</span> ` : '') + `<span class="act ${next.kind}">${kindLabel(next)} ${when(next.t)}</span> <span class="cd">${inStr(next.t-now)}</span>${next.games.length && s.games.length>1 && ev.length>1 ? ` <span class="muted">· ${next.games.join(', ')}</span>`:''}`
       : anyFuture ? `<span class="okdone">✓ Lineups done</span>` + (single ? ` <span class="muted">· ${kindLabel(ev[ev.length-1])} ${when(ev[ev.length-1].t)}</span>` : '')
       : `<span class="muted">All games started</span>`;
     d.innerHTML = `<div class="slate-h"><div class="sh-title"><span class="pill ${s.site}">${s.site}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <strong>${slateDetail(s)}</strong></div><button class="x" title="Remove">✕</button></div>
@@ -457,7 +473,7 @@ function render(){
     const pastGames = [...s.games.filter(g=>g.started).map(g=>g.teams?.length ? g.teams.join('/') : (guessPlayed(s).replace(/<[^>]+>.*$/,'').trim() || 'earlier game')), ...pastEv.flatMap(e=>e.games)];
     let rows = '';
     if(pastGames.length) rows += `<tr class="past"><td class="t">Locked</td><td>${pastGames.join(', ')}</td><td></td><td></td></tr>`;
-    if(ev.length > 1 || pastGames.length) rows += futEv.map(e=>`<tr class="${e.t==nextT?'next':''} ${isDone(s,e.t)?'isdone':''}"><td class="t">${when(e.t)}</td><td>${e.games.join(', ')}</td><td class="tag ${e.kind}">${kindLabel(e)}</td><td>${doneBtn(s,e.t)}</td></tr>`).join('');
+    if(ev.length > 1 || pastGames.length) rows += futEv.map(e=>`<tr class="${e.t==nextT?'next':''} ${isDone(s,e.t)?'isdone':''} ${isNeeded(s,e.t)?'isneed':''}"><td class="t">${when(e.t)}</td><td>${e.games.join(', ')}</td><td class="tag ${e.kind}">${kindLabel(e)}</td><td>${doneBtn(s,e.t)}</td></tr>`).join('');
     t.innerHTML += rows;
     const missing = s.games.filter(g=>!g.ms && !g.started);
     for(const g of missing){
@@ -487,7 +503,7 @@ function render(){
   let lastDay = '';
   tl.innerHTML = Object.entries(byT).sort((a,b)=>a[0]-b[0]).map(([t,es])=>{
     const day = fmtDay(+t); const hdr = day!==lastDay ? `<tr><th colspan="2">${etDateKey(+t)==todayKey()?'Today, ':(etDateKey(+t)==etDateKey(Date.now()+864e5)?'Tomorrow, ':'')}${day}</th></tr>` : ''; lastDay = day;
-    return hdr + `<tr class="${+t<now?'past':''} ${+t==nextT?'next':''}"><td class="t">${fmtTime(+t)}</td><td>${es.map(e=>`${+t>now?doneBtn(e.slate,e.t):'<span class="chkpad"></span>'} <span class="pill ${e.slate.site}">${e.slate.site}</span> ${e.slate.sport} ${e.slate.type} <span class="muted">${slateDetail(e.slate)}</span> <span class="tag ${e.kind}">${kindLabel(e)}</span>`.replace(/^(<button[^]*?<\/button>|<span class="chkpad"><\/span>) /, (m,c)=>`<div class="tle ${isDone(e.slate,e.t)?'isdone':''}">${c}<span>`)+'</span></div>').join('')}</td></tr>`;
+    return hdr + `<tr class="${+t<now?'past':''} ${+t==nextT?'next':''}"><td class="t">${fmtTime(+t)}</td><td>${es.map(e=>`${+t>now?doneBtn(e.slate,e.t):'<span class="chkpad"></span>'} <span class="pill ${e.slate.site}">${e.slate.site}</span> ${e.slate.sport} ${e.slate.type} <span class="muted">${slateDetail(e.slate)}</span> <span class="tag ${e.kind}">${kindLabel(e)}</span>`.replace(/^(<button[^]*?<\/button>|<span class="chkpad"><\/span>) /, (m,c)=>`<div class="tle ${isDone(e.slate,e.t)?'isdone':''} ${isNeeded(e.slate,e.t)?'isneed':''}">${c}<span>`)+'</span></div>').join('')}</td></tr>`;
   }).join('');
   renderDay();
   tick();
@@ -533,14 +549,14 @@ function renderDay(){
   const body = rows.map(([s,es])=>{
     const startedBefore = slateEvents(s).some(e=>e.t<es[0].t) || s.games.some(g=>g.started);
     const lo = startedBefore ? 0 : pct(es[0].t), hi = pct(es[es.length-1].t);
-    const ticks = es.map(e=>`<button class="gtick ${e.kind=='first'?'first':''} ${e.t<now?'past':''} ${isDone(e.slate,e.t)?'tdone':''}" data-key="${encodeURIComponent(e.slate.key)}" data-t="${e.t}" style="left:${pct(e.t)}%" title="${fmtTime(e.t)} ${kindLabel(e)}: ${e.games.join(', ')}. Tap to ${isDone(e.slate,e.t)?'undo done':'mark lineups done'}">${isDone(e.slate,e.t)?'✓':''}</button><span class="gtime" style="left:${Math.min(95,Math.max(5,pct(e.t)))}%">${fmtTime(e.t).replace(':00','').replace(' ','').toLowerCase()}</span>`).join('');
+    const ticks = es.map(e=>`<button class="gtick ${e.kind=='first'?'first':''} ${e.t<now?'past':''} ${isDone(e.slate,e.t)?'tdone':''} ${isNeeded(e.slate,e.t)?'tneed':''}" data-key="${encodeURIComponent(e.slate.key)}" data-t="${e.t}" style="left:${pct(e.t)}%" title="${fmtTime(e.t)} ${kindLabel(e)}: ${e.games.join(', ')}. ${markTitle(e.slate,e.t)}">${isDone(e.slate,e.t)?'✓':isNeeded(e.slate,e.t)?'!':''}</button><span class="gtime" style="left:${Math.min(95,Math.max(5,pct(e.t)))}%">${fmtTime(e.t).replace(':00','').replace(' ','').toLowerCase()}</span>`).join('');
     return `<div class="grow"><div class="glabel" title="${s.site} ${s.sport} ${s.type} · ${slateDetail(s)}"><span class="pill ${s.site}">${s.site}</span> ${s.sport} ${s.type} <span class="muted">${slateDetail(s)}</span></div>
       <div class="gtrack">${grid}${nowLine}<div class="gbar ${s.site} ${startedBefore?'cont':''}" style="left:${lo}%;width:${Math.max(hi-lo,0.8)}%"></div>${ticks}</div></div>`;
   }).join('');
   const dayLabel = (dayKey==todayKey()?'Today, ':(dayKey==etDateKey(now+864e5)?'Tomorrow, ':'')) + fmtDay(hourMs(12));
   dv.innerHTML = `<div class="dnav"><button id="dPrev" ${di<=0?'disabled':''}>‹</button><strong>${dayLabel}</strong><button id="dNext" ${di>=days.length-1?'disabled':''}>›</button></div>
     <div class="gantt"><div class="gaxrow"><div></div><div class="gaxis">${axis}</div></div><div style="position:relative">${body}</div></div>
-    <div class="legend"><span><i style="background:var(--warn)"></i>First Lock</span><span><i style="background:var(--ink)"></i>Late Swap</span><span><i style="background:var(--dk)"></i>Done · tap a dot to mark or undo</span></div>`;
+    <div class="legend"><span><i style="background:var(--warn)"></i>First Lock</span><span><i style="background:var(--ink)"></i>Late Swap</span><span><i style="background:#f5a524"></i>Swap needed</span><span><i style="background:var(--dk)"></i>Done · tap a dot to mark</span></div>`;
   dv.querySelector('#dPrev').onclick = ()=>{ dayKey = days[di-1]; renderDay(); };
   dv.querySelector('#dNext').onclick = ()=>{ dayKey = days[di+1]; renderDay(); };
 }
@@ -577,7 +593,7 @@ function slimSlates(){
     games:x.games.map(g=>({label:g.label, away:g.away, home:g.home, ms:g.ms, src:g.src, started:g.started, teams:g.teams})),
     contests:x.contests.map(c=>({name:c.name, fee:c.fee, entries:c.entries})), done:x.done}));
 }
-function syncStatus(msg, bad){ const el=document.getElementById('syncStatus'); const marks = Object.values(slates).reduce((n,x)=>n+Object.values(x.done||{}).filter(v=>v>0).length,0);
+function syncStatus(msg, bad){ const el=document.getElementById('syncStatus'); const marks = Object.values(slates).reduce((n,x)=>n+Object.values(x.done||{}).filter(v=>markOf(v).st==2).length,0);
   const topic = (document.getElementById('topic').value||'').trim();
   el.textContent='Sync: '+msg+(topic?` · topic "${topic}" · ${Object.keys(slates).length} slates, ${marks} ✓`:''); el.classList.toggle('warn', !!bad); }
 const nowStr = () => fmtTime(Date.now());
@@ -602,8 +618,9 @@ function mergeDone(list){
     sl.done ||= {};
     for(const t of new Set([...Object.keys(r), ...Object.keys(sl.done)])){
       const a = sl.done[t]||0, b = r[t]||0;
-      if(Math.abs(b) > Math.abs(a)){ sl.done[t]=b; changedLocal=true; }
-      else if(Math.abs(a) > Math.abs(b)) remoteBehind=true;
+      const ma=markOf(a).at, mb=markOf(b).at;
+      if(mb > ma){ sl.done[t]=b; changedLocal=true; }
+      else if(ma > mb) remoteBehind=true;
     }
   }
   return {changedLocal, remoteBehind};
