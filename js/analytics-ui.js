@@ -245,18 +245,40 @@ VIEWS.overview = () => {
   const A = S.A, std = S.std, times = A.valid.map(e=>A.groups.get(e.key).count), dupG = A.glist.filter(g=>g.count>1);
   const unique = times.filter(t=>t===1).length, mine = me() ? userMetrics(me()) : null;
   const reasons = {}; for(const e of std.skipped) reasons[e.invalid] = (reasons[e.invalid]||0)+1;
+  const cov = A.glist.filter(g=>g.proj!==null).length;
   let h = tiles([[int(A.fieldSize),'Field size (all entries)','Every entry ID in the file; used for ranks and payouts'],[int(A.valid.length),'Valid lineups'],[int(std.skipped.length),'Skipped rows', Object.entries(reasons).map(([k,v])=>v+' '+k).join(', ')],
     [int(A.glist.length),'Distinct builds'],[int(dupG.length),'Duplicated builds'],[int(dupG.reduce((s,g)=>s+g.count,0)),'Entries in duplicated builds'],
-    [int(Math.max(0,...A.glist.map(g=>g.count)))+'×','Max times played'],[pc(unique/Math.max(1,A.valid.length)*100),'Unique field entries'],
-    mine && [`${int(mine.dupes.unique!==null ? Math.round(mine.dupes.unique*mine.n/100) : 0)} / ${int(mine.n)}`, 'Your unique entries']]);
-  if(A.pm){
-    const gp = A.valid.map(e=>A.groups.get(e.key).proj), cov = A.glist.filter(g=>g.proj!==null).length;
-    const bu = A.glist.filter(g=>g.count===1 && g.proj!==null).map(g=>g.proj);
-    h += tiles([[f(A.ceiling),'Contest ceiling','Highest complete projection among lineups actually played'],[f(C.mean(gp)),'Field avg projection (per entry)'],
-      [f(C.mean(A.glist.map(g=>g.proj))),'Field avg projection (per build)'],[bu.length?f(Math.max(...bu)):'—','Best unique projection'],
-      mine && [f(mine.avgProj),'Your avg projection'], mine && [f(mine.myMax),'Your max projection'],
-      [pc(cov/A.glist.length*100),'Builds with full projection', `${int(cov)} of ${int(A.glist.length)}; the rest are left out of projection metrics`]]);
-  }
+    A.pm && [f(A.ceiling),'Contest ceiling','Highest complete projection among lineups actually played'],
+    A.pm && [pc(cov/A.glist.length*100),'Builds with full projection', `${int(cov)} of ${int(A.glist.length)}; the rest are left out of projection metrics`]]);
+  // you vs field, side by side. Field figures are per entry (every valid field entry counts once), like yours.
+  const fd = C.dupeStats(times.map(t=>t-1));
+  const gp = A.valid.map(e=>A.groups.get(e.key).proj);
+  const fBestU = A.glist.filter(g=>g.count===1 && g.proj!==null).reduce((m,g)=>Math.max(m,g.proj), -Infinity);
+  const fGap = A.pm ? C.mean(A.valid.map(e=>{ const g=A.groups.get(e.key); if(g.proj===null) return null; const b=A.bestAtOrBelow(g.count); return b ? b.proj-g.proj : null; })) : null;
+  const mB = mine && mine.n ? portfolioBuilds('u:'+me()).builds : [];
+  const mBestU = mB.filter(b=>b.times===1 && b.proj!==null).reduce((m,b)=>Math.max(m,b.proj), -Infinity);
+  const cmp = [ // [label, you, field, decimals, suffix, better: 1 higher / -1 lower / 0 neutral, tip]
+    ['Entries', mine?.n, A.valid.length, 0, '', 0, 'Valid lineups'],
+    ['Unique entries', mine?.dupes.unique, fd.unique, 1, '%', 1, 'Share of entries whose exact lineup nobody else played'],
+    ['≤1 dupe', mine?.dupes.le1, fd.le1, 1, '%', 1],
+    ['≤4 dupes', mine?.dupes.le4, fd.le4, 1, '%', 1],
+    ['Avg dupes', mine?.dupes.avg, fd.avg, 2, '', -1, 'Other entries with the same lineup, averaged over entries'],
+    ['Median dupes', mine?.dupes.median, fd.median, 0, '', -1],
+    ['P90 dupes', mine?.dupes.p90, fd.p90, 0, '', -1],
+    ['Max times played', mine && mine.n ? mine.dupes.max+1 : null, Math.max(0,...times), 0, '×', -1],
+    ['Distinct builds per entry', mine && mine.n ? mine.distinct/mine.n*100 : null, A.glist.length/Math.max(1,A.valid.length)*100, 1, '%', 0, 'Distinct lineups ÷ entries'],
+    ...(A.pm ? [
+    ['Avg projection', mine?.avgProj, C.mean(gp), 2, '', 1, 'Per entry, fully projected lineups only'],
+    ['Max projection', mine?.myMax, A.ceiling, 2, '', 1, 'Field: the contest ceiling'],
+    ['Best unique projection', ok(mBestU)?mBestU:null, ok(fBestU)?fBestU:null, 2, '', 1, 'Highest projection among lineups played only once'],
+    ['Avg contest loss', mine?.avgContestLoss, ok(A.ceiling)?A.ceiling-C.mean(gp):null, 2, '', -1, 'Contest ceiling − lineup projection'],
+    ['Avg efficiency gap', mine?.avgGap, fGap, 2, '', -1, 'Best field projection played no more often − lineup projection']] : []),
+    ['Avg points', mine?.avgPoints, C.mean(A.valid.map(e=>e.points)), 2, '', 1]];
+  const v = (x,d,sx) => ok(x) ? (d===0 ? int(x) : x.toFixed(d))+sx : '—';
+  h += `<div class="card"><h3>${esc(me()||'You')} vs the field</h3>${mine && mine.n ? `<div class="tw free" style="max-width:760px"><table><thead><tr><th>Stat</th><th class="n">${esc(me())}</th><th class="n">Field</th><th class="n">Diff</th></tr></thead><tbody>${cmp.map(([l,y,fl,d,sx,dir,tip])=>{ const df = ok(y)&&ok(fl) ? y-fl : null;
+      const c = !dir || !ok(df) || Math.abs(df)<1e-9 ? '' : (df*dir>0 ? 'pos' : 'neg');
+      return `<tr><td ${tip?`title="${esc(tip)}"`:''}>${l}</td><td class="n"><b>${v(y,d,sx)}</b></td><td class="n">${v(fl,d,sx)}</td><td class="n ${c}">${dir===0 && l==='Entries' ? '' : ok(df) ? (df>0?'+':'')+(d===0?Math.round(df):df.toFixed(d))+(sx==='%'?' pp':sx) : '—'}</td></tr>`; }).join('')}</tbody></table></div>
+    <div class="note">Field figures count every valid field entry once, the same way yours do. Green means better for you (more unique, higher projection, less given up); red means worse. pp = percentage points.</div>` : `<div class="muted small">${esc(me()||'Your username')} has no entries in this contest.</div>`}</div>`;
   const rows = [['Field, per entry', C.dupeStats(times.map(t=>t-1))], ['Field, per distinct build', C.dupeStats(A.glist.map(g=>g.count-1))]];
   for(const u of trackedList()){ const m = userMetrics(u); rows.push([u+(u===me()?' (you)':''), m && m.n ? m.dupes : null]); }
   h += `<div class="grid2"><div class="card"><h3>Field: times played</h3>${distBars(times)}<div class="note">Share of valid field entries whose exact lineup was played that many times (including themselves).</div></div>
