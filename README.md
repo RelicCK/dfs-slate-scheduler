@@ -8,7 +8,7 @@ Open the GitHub Pages site, drop in your entry files, enter your ntfy topic, and
 - FanDuel times are matched to same-day DraftKings games, then looked up on ESPN's scoreboard. If neither has a time, you can type it in.
 - Everything runs in your browser. Files are never uploaded anywhere.
 
-## Contest Analytics (`analytics.html`)
+## Dupe Checker (`analytics.html`)
 
 Post-contest duplication and strategy analytics (the former DFS Dupe Checker), linked from the Slate Locks header.
 
