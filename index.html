@@ -36,6 +36,8 @@ th{font-size:12px;color:var(--muted);font-weight:600;border-top:none}
 td.t{white-space:nowrap;font-variant-numeric:tabular-nums;width:1%}
 .past{opacity:.45}
 .next td{background:var(--soft)}
+table.sched tr.next td:first-child{border-radius:6px 0 0 6px}table.sched tr.next td:last-child{border-radius:0 6px 6px 0}
+table.sched tr.next td,table.sched tr.next+tr td{border-top-color:transparent}
 .tag{font-size:12px;font-weight:600}
 .tag.first{color:var(--warn)}
 .warn{color:var(--warn)}
@@ -68,7 +70,8 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px}
 .grow:first-child .gnow::before{content:'now';position:absolute;top:-2px;left:4px;font-size:10px;color:var(--warn)}
 .legend{font-size:12px;color:var(--muted);margin-top:6px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px}
-.x{border:none;background:none;color:var(--muted);padding:2px 6px}
+.x{border:none;background:none;color:var(--muted);padding:4px 6px;line-height:0;border-radius:6px;opacity:.7}
+.x:hover{opacity:1;background:var(--soft)}
 /* wide screens: use the width, two columns, one-line day-view rows */
 @media (min-width:1000px){
   main{max-width:none;padding:14px 24px}
@@ -86,7 +89,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px}
   .gbar{top:5px}
 }
 .slate{padding:12px 14px}
-.slate.soon{border-color:var(--warn);box-shadow:inset 3px 0 0 var(--warn)}
+.slate.soon{border-color:color-mix(in srgb,var(--warn) 40%,var(--line));box-shadow:inset 3px 0 0 var(--warn)}
 .slate.done{opacity:.6}
 .slate .slate-h{flex-wrap:nowrap;align-items:flex-start}
 .sh-title{line-height:1.6;flex:1;min-width:0}
@@ -94,7 +97,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px}
 .act{font-weight:700}
 .act.first{color:var(--warn)}
 .cd{font-weight:600;background:var(--soft);border-radius:6px;padding:1px 6px;font-variant-numeric:tabular-nums}
-.soon .cd{background:var(--warn);color:#fff}
+.soon .cd{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
 table.sched{table-layout:fixed;margin-top:6px}
 table.sched col.c1{width:112px}
 table.sched col.c3{width:84px}
@@ -102,7 +105,7 @@ table.sched td{padding:5px 4px}
 table.sched td:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #slates details{margin-top:6px}
 table.sched col.c4{width:58px}
-button.chk{width:24px;height:24px;padding:0;border-radius:6px;font-size:14px;line-height:1;border:1.5px solid var(--muted);background:transparent;color:#fff;vertical-align:middle}
+button.chk{width:24px;height:24px;padding:0;border-radius:6px;font-size:14px;line-height:1;border:1.5px solid color-mix(in srgb,var(--muted) 70%,transparent);background:transparent;color:#fff;vertical-align:middle;display:inline-flex;align-items:center;justify-content:center;flex:none}
 button.chk.on{background:var(--dk);border-color:var(--dk)}
 button.chk.wide{width:auto;height:auto;padding:2px 8px;font-size:12px;color:var(--ink)}
 button.chk.wide.on{color:#fff}
@@ -112,32 +115,42 @@ tr.isdone td:nth-child(2), .isdone .muted{text-decoration:line-through}
 .tle{display:flex;gap:4px;align-items:flex-start;margin:2px 0}
 .tle>button.chk{flex:none}
 #timeline button.chk{margin:1px 4px 1px 0}
+#timeline button.nbtn{width:20px;height:20px}
 #timeline .isdone button.chk{opacity:1}
-button.nbtn{flex:none;border:0;background:transparent;padding:0 3px;font-size:13px;line-height:1.2;cursor:pointer;opacity:.3;filter:grayscale(1);vertical-align:middle}
-button.nbtn.has{opacity:1;filter:none}
-.nline{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;margin-top:1px}
+button.nbtn{flex:none;border:0;background:transparent;padding:0;width:24px;height:24px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);opacity:.45;vertical-align:middle}
+button.nbtn:hover{opacity:1;background:var(--soft)}
+button.nbtn.has{opacity:1;color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.ctl{display:inline-flex;align-items:center;gap:6px}
+td.cbtn{text-align:right;vertical-align:middle;padding-right:2px!important}
+td.kind{font-size:11.5px;font-weight:600;color:var(--muted);text-align:right;padding-right:10px!important;vertical-align:middle;white-space:nowrap}
+td.kind.first{color:var(--warn)}
+table.sched td{vertical-align:middle}
+table.sched tr.past td{font-size:13px}
+.nline svg{width:11px;height:11px;flex:none;color:var(--accent)}
+.nline{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:500;color:var(--ink);opacity:.85;white-space:nowrap;overflow:hidden;cursor:pointer;margin-top:2px}
+.nline span{overflow:hidden;text-overflow:ellipsis}
 .isdone .nline{text-decoration:none}
-td.cbtn{white-space:nowrap;text-align:right}
-button.gnote{position:absolute;top:-4px;margin-left:6px;border:0;background:transparent;padding:0;font-size:11px;line-height:1;cursor:pointer;z-index:4}
+button.gnote{position:absolute;top:-6px;margin-left:5px;border:0;background:var(--card);color:var(--accent);border-radius:4px;padding:1px;line-height:0;cursor:pointer;z-index:4}
+button.gnote svg{width:11px;height:11px}
 button.gtick{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;touch-action:manipulation}
 #noteList{max-height:60vh;overflow:auto;margin:8px 0 10px}
 .nlock{display:block;margin:0 0 10px;font-size:13px}
 .nlock textarea{display:block;width:100%;margin-top:4px;font:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);resize:vertical;box-sizing:border-box}
-button.nbtn:hover{opacity:1}
-.isdone button.nbtn.has{opacity:1}
 .glabel{display:flex;align-items:center;gap:4px}
 .glabel .gtxt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
 #noteDlg{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--card);color:var(--ink);width:min(440px,calc(100vw - 32px));box-shadow:0 10px 40px rgba(0,0,0,.25)}
 #noteDlg::backdrop{background:rgba(0,0,0,.35)}
 #noteDlg .row{display:flex;justify-content:flex-end;gap:8px}
 .actr{display:flex;align-items:center;gap:10px}
-.actr button.chk{margin-right:5px}
+.actr .ctl{margin-right:2px}
 .okdone{color:var(--dk);font-weight:700}
 .gtick.tdone{background:var(--dk)!important;opacity:1}
 .gtick.tneed{background:#f5a524!important;opacity:1;color:#000;font-weight:800}
 button.chk.need{background:#f5a524;border-color:#f5a524;color:#000;font-weight:800}
 tr.isneed td:nth-child(2), .tle.isneed .muted{color:#f5a524;font-weight:600}
-.needtag{background:#f5a524;color:#000;font-weight:700;border-radius:6px;padding:1px 6px}
+.needtag{color:#f5a524;font-weight:600;font-size:12px}
+.act.need{color:#f5a524}
+.act.need::before{content:'!';display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#f5a524;color:#000;font-size:11px;font-weight:800;margin-right:5px;vertical-align:1px}
 button.gtick{padding:0;cursor:pointer;color:#fff;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:3}
 button.gtick:hover{transform:scale(1.15)}
 @media (max-width:480px){table.sched col.c1{width:92px}table.sched col.c3{width:76px}}
@@ -165,7 +178,7 @@ button.gtick:hover{transform:scale(1.15)}
   table.sched{margin-top:3px}
   table.sched td{padding:2px 4px}
   table.sched col.c1{width:96px}
-  button.chk{width:20px;height:20px;font-size:12px}
+  button.chk,button.nbtn{width:22px;height:22px;font-size:12px}
   #slates details{margin-top:2px;font-size:12px}
 }
 /* when the card column is wide enough, title and next action share one line */
@@ -508,10 +521,11 @@ const kindLabel = e => e.kind=='first' ? 'First Lock' : 'Late Swap';
 // ---------- lock notes (one per slate per lock time) ----------
 let noteEditing = null, noteTimer = null, dlgKey = null;
 const esc = x => String(x).replace(/[<&"]/g,c=>({'<':'&lt;','&':'&amp;','"':'&quot;'})[c]);
+const NOTE_SVG = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 2.5l3 3L6 13H3v-3z"/><path d="M9 4l3 3"/></svg>';
 const noteOf = (s,t) => s.notes?.[t]?.text || '';
 const noteBtn = (s,t) => { const n = noteOf(s,t);
-  return `<button class="nbtn ${n?'has':''}" data-note="${encodeURIComponent(s.key)}" data-t="${t}" title="${n ? esc(n) : 'Add a note for this lock'}">📝</button>`; };
-const noteLine = (s,t) => { const n = noteOf(s,t); return n ? `<div class="nline" data-note="${encodeURIComponent(s.key)}" data-t="${t}">📝 ${esc(n.replace(/\n+/g,' · '))}</div>` : ''; };
+  return `<button class="nbtn ${n?'has':''}" data-note="${encodeURIComponent(s.key)}" data-t="${t}" title="${n ? esc(n) : 'Add a note for this lock'}" aria-label="${n?'Edit note':'Add note'}">${NOTE_SVG}</button>`; };
+const noteLine = (s,t) => { const n = noteOf(s,t); return n ? `<div class="nline" data-note="${encodeURIComponent(s.key)}" data-t="${t}">${NOTE_SVG}<span>${esc(n.replace(/\n+/g,' · '))}</span></div>` : ''; };
 function migrateNotes(){ let m=false; // older version kept one note per slate: move it onto the slate's next lock
   for(const s of Object.values(slates)){ if(!s.note) continue;
     if(s.note.text){ const ev = slateEvents(s); const e = ev.find(e=>e.t>Date.now()) || ev[ev.length-1];
@@ -566,11 +580,11 @@ function render(){
     const single = ev.filter(e=>e.t>now).length==1 && !s.games.some(g=>g.started) && ev.length==1;
     const needed = ev.filter(e=>e.t>now && isNeeded(s,e.t));
     const action = next
-      ? (needed.length ? `<span class="needtag">! Swap needed</span> ` : '') + `<span class="act ${next.kind}">${kindLabel(next)} ${when(next.t)}</span> <span class="cd">${inStr(next.t-now)}</span>${next.games.length && s.games.length>1 && ev.length>1 ? ` <span class="muted">· ${next.games.join(', ')}</span>`:''}`
+      ? (isNeeded(s,next.t) ? `<span class="act need">Swap needed ${when(next.t)}</span>` : `<span class="act ${next.kind}">${kindLabel(next)} ${when(next.t)}</span>`) + ` <span class="cd">${inStr(next.t-now)}</span>` + (needed.length && !isNeeded(s,next.t) ? ` <span class="needtag">swap needed later</span>` : '')
       : anyFuture ? `<span class="okdone">✓ Lineups done</span>` + (single ? ` <span class="muted">· ${kindLabel(ev[ev.length-1])} ${when(ev[ev.length-1].t)}</span>` : '')
       : `<span class="muted">All games started</span>`;
-    d.innerHTML = `<div class="slate-h"><div class="sh-title"><span class="pill ${s.site}">${s.site}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <strong>${slateDetail(s)}</strong></div><button class="x" title="Remove">✕</button></div>
-      <div class="actbar"><div>${action}</div><div class="actr">${single ? noteBtn(s, ev[0].t) + doneBtn(s, ev[0].t) : ''}</div></div>${single ? noteLine(s, ev[0].t) : ''}`;
+    d.innerHTML = `<div class="slate-h"><div class="sh-title"><span class="pill ${s.site}">${s.site}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <strong>${slateDetail(s)}</strong></div><button class="x" title="Remove slate" aria-label="Remove slate"><svg viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></div>
+      <div class="actbar"><div>${action}</div><div class="actr">${single ? `<span class="ctl">${noteBtn(s, ev[0].t)}${doneBtn(s, ev[0].t)}</span>` : ''}</div></div>${single ? noteLine(s, ev[0].t) : ''}`;
     const t = document.createElement('table'); t.className='sched';
     t.innerHTML = '<colgroup><col class="c1"><col><col class="c3"><col class="c4"></colgroup>';
     // rows: collapse everything already locked into one line, show what's left
@@ -579,7 +593,7 @@ function render(){
     const pastGames = [...s.games.filter(g=>g.started).map(g=>g.teams?.length ? g.teams.join('/') : (guessPlayed(s).replace(/<[^>]+>.*$/,'').trim() || 'earlier game')), ...pastEv.flatMap(e=>e.games)];
     let rows = '';
     if(pastGames.length) rows += `<tr class="past"><td class="t">Locked</td><td>${pastGames.join(', ')}</td><td></td><td></td></tr>`;
-    if(ev.length > 1 || pastGames.length) rows += futEv.map(e=>`<tr class="${e.t==nextT?'next':''} ${isDone(s,e.t)?'isdone':''} ${isNeeded(s,e.t)?'isneed':''}"><td class="t">${when(e.t)}</td><td>${e.games.join(', ')}${noteLine(s,e.t)}</td><td class="tag ${e.kind}">${kindLabel(e)}</td><td class="cbtn">${noteBtn(s,e.t)}${doneBtn(s,e.t)}</td></tr>`).join('');
+    if(ev.length > 1 || pastGames.length) rows += futEv.map(e=>`<tr class="${e.t==nextT?'next':''} ${isDone(s,e.t)?'isdone':''} ${isNeeded(s,e.t)?'isneed':''}"><td class="t">${when(e.t)}</td><td>${e.games.join(', ')}${noteLine(s,e.t)}</td><td class="kind ${e.kind}">${kindLabel(e)}</td><td class="cbtn"><span class="ctl">${noteBtn(s,e.t)}${doneBtn(s,e.t)}</span></td></tr>`).join('');
     t.innerHTML += rows;
     const missing = s.games.filter(g=>!g.ms && !g.started);
     for(const g of missing){
@@ -609,7 +623,7 @@ function render(){
   let lastDay = '';
   tl.innerHTML = Object.entries(byT).sort((a,b)=>a[0]-b[0]).map(([t,es])=>{
     const day = fmtDay(+t); const hdr = day!==lastDay ? `<tr><th colspan="2">${etDateKey(+t)==todayKey()?'Today, ':(etDateKey(+t)==etDateKey(Date.now()+864e5)?'Tomorrow, ':'')}${day}</th></tr>` : ''; lastDay = day;
-    return hdr + `<tr class="${+t<now?'past':''} ${+t==nextT?'next':''}"><td class="t">${fmtTime(+t)}</td><td>${es.map(e=>`${+t>now?doneBtn(e.slate,e.t):'<span class="chkpad"></span>'} <span class="pill ${e.slate.site}">${e.slate.site}</span> ${e.slate.sport} ${e.slate.type} <span class="muted">${slateDetail(e.slate)}</span> <span class="tag ${e.kind}">${kindLabel(e)}</span> ${noteBtn(e.slate,e.t)}${noteLine(e.slate,e.t)}`.replace(/^(<button[^]*?<\/button>|<span class="chkpad"><\/span>) /, (m,c)=>`<div class="tle ${isDone(e.slate,e.t)?'isdone':''} ${isNeeded(e.slate,e.t)?'isneed':''}">${c}<span>`)+'</span></div>').join('')}</td></tr>`;
+    return hdr + `<tr class="${+t<now?'past':''} ${+t==nextT?'next':''}"><td class="t">${fmtTime(+t)}</td><td>${es.map(e=>`${+t>now?doneBtn(e.slate,e.t):'<span class="chkpad"></span>'} <span class="pill ${e.slate.site}">${e.slate.site}</span> ${e.slate.sport} ${e.slate.type} <span class="muted">${slateDetail(e.slate)}</span> <span style="white-space:nowrap"><span class="tag ${e.kind}">${kindLabel(e)}</span> ${noteBtn(e.slate,e.t)}</span>${noteLine(e.slate,e.t)}`.replace(/^(<button[^]*?<\/button>|<span class="chkpad"><\/span>) /, (m,c)=>`<div class="tle ${isDone(e.slate,e.t)?'isdone':''} ${isNeeded(e.slate,e.t)?'isneed':''}">${c}<span>`)+'</span></div>').join('')}</td></tr>`;
   }).join('');
   try{ renderDay(); }catch(e){ console.error(e); log('Day view error: '+e.message); }
   tick();
@@ -659,7 +673,7 @@ function renderDay(){
     // glow: in the next lock, and either a First Lock not yet done, or a Late Swap flagged "swap needed"
     const glow = upNext && es.some(e=>e.t==upNext && (e.kind=='first' ? !isDone(s,e.t) : isNeeded(s,e.t)));
     const lo = startedBefore ? 0 : pct(es[0].t), hi = goesOn ? 100 : pct(es[es.length-1].t);
-    const ticks = es.map(e=>`<button class="gtick ${e.kind=='first'?'first':''} ${e.t<now?'past':''} ${isDone(e.slate,e.t)?'tdone':''} ${isNeeded(e.slate,e.t)?'tneed':''}" data-key="${encodeURIComponent(e.slate.key)}" data-t="${e.t}" style="left:${pct(e.t)}%" title="${fmtTime(e.t)} ${kindLabel(e)}: ${e.games.join(', ')}. ${markTitle(e.slate,e.t)}. Hold (or right-click) for a note${noteOf(e.slate,e.t)?': '+esc(noteOf(e.slate,e.t)):''}">${isDone(e.slate,e.t)?'✓':isNeeded(e.slate,e.t)?'!':''}</button>${noteOf(e.slate,e.t) ? `<button class="gnote" data-note="${encodeURIComponent(e.slate.key)}" data-t="${e.t}" style="left:${pct(e.t)}%" title="${esc(noteOf(e.slate,e.t))}">📝</button>` : ''}<span class="gtime" style="left:${Math.min(95,Math.max(5,pct(e.t)))}%">${fmtTime(e.t).replace(':00','').replace(' ','').toLowerCase()}</span>`).join('');
+    const ticks = es.map(e=>`<button class="gtick ${e.kind=='first'?'first':''} ${e.t<now?'past':''} ${isDone(e.slate,e.t)?'tdone':''} ${isNeeded(e.slate,e.t)?'tneed':''}" data-key="${encodeURIComponent(e.slate.key)}" data-t="${e.t}" style="left:${pct(e.t)}%" title="${fmtTime(e.t)} ${kindLabel(e)}: ${e.games.join(', ')}. ${markTitle(e.slate,e.t)}. Hold (or right-click) for a note${noteOf(e.slate,e.t)?': '+esc(noteOf(e.slate,e.t)):''}">${isDone(e.slate,e.t)?'✓':isNeeded(e.slate,e.t)?'!':''}</button>${noteOf(e.slate,e.t) ? `<button class="gnote" data-note="${encodeURIComponent(e.slate.key)}" data-t="${e.t}" style="left:${pct(e.t)}%" title="${esc(noteOf(e.slate,e.t))}">${NOTE_SVG}</button>` : ''}<span class="gtime" style="left:${Math.min(95,Math.max(5,pct(e.t)))}%">${fmtTime(e.t).replace(':00','').replace(' ','').toLowerCase()}</span>`).join('');
     return `<div class="grow"><div class="glabel ${glow?'glow':''}" title="${s.site} ${s.sport} ${s.type} · ${slateDetail(s)}"><span class="gtxt"><span class="pill ${s.site}">${s.site}</span> ${s.sport} ${s.type} <span class="muted">${slateDetail(s)}</span></span></div>
       <div class="gtrack">${grid}${nowLine}<div class="gbar ${s.site} ${startedBefore?'cont':''} ${goesOn?'more':''}" style="left:${lo}%;width:${Math.max(hi-lo,0.8)}%"></div>${ticks}</div></div>`;
   }).join('');
