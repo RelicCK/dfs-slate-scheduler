@@ -57,7 +57,8 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px}
 .ggrid{position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
 .gbar{position:absolute;top:7px;height:8px;border-radius:4px;opacity:.55}
 .gbar.DK{background:var(--dk)}.gbar.FD{background:var(--fd)}
-.glabel.glow{background:color-mix(in srgb,var(--warn) 22%,transparent);box-shadow:0 0 10px 1px color-mix(in srgb,var(--warn) 45%,transparent);border-radius:8px;padding:3px 6px;margin-left:-6px}
+.glabel.glow{background:color-mix(in srgb,var(--warn) 24%,var(--card));margin-left:-6px;padding-left:6px;position:relative;z-index:1}
+.gbody .glabel.glow{align-self:stretch;display:flex;align-items:center;gap:4px;margin-top:-2px;margin-bottom:-3px}
 .gbar.more{border-top-right-radius:0;border-bottom-right-radius:0}
 .gbar.cont{border-top-left-radius:0;border-bottom-left-radius:0}
 .gtick{position:absolute;top:1px;width:20px;height:20px;margin-left:-10px;border-radius:50%;border:2px solid var(--card);background:var(--ink)}
