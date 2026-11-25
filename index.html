@@ -546,7 +546,7 @@ function render(){
     const day = fmtDay(+t); const hdr = day!==lastDay ? `<tr><th colspan="2">${etDateKey(+t)==todayKey()?'Today, ':(etDateKey(+t)==etDateKey(Date.now()+864e5)?'Tomorrow, ':'')}${day}</th></tr>` : ''; lastDay = day;
     return hdr + `<tr class="${+t<now?'past':''} ${+t==nextT?'next':''}"><td class="t">${fmtTime(+t)}</td><td>${es.map(e=>`${+t>now?doneBtn(e.slate,e.t):'<span class="chkpad"></span>'} <span class="pill ${e.slate.site}">${e.slate.site}</span> ${e.slate.sport} ${e.slate.type} <span class="muted">${slateDetail(e.slate)}</span> <span class="tag ${e.kind}">${kindLabel(e)}</span>`.replace(/^(<button[^]*?<\/button>|<span class="chkpad"><\/span>) /, (m,c)=>`<div class="tle ${isDone(e.slate,e.t)?'isdone':''} ${isNeeded(e.slate,e.t)?'isneed':''}">${c}<span>`)+'</span></div>').join('')}</td></tr>`;
   }).join('');
-  renderDay();
+  try{ renderDay(); }catch(e){ console.error(e); log('Day view error: '+e.message); }
   tick();
 }
 
@@ -583,9 +583,9 @@ function renderDay(){
     if((h-h0)%step==0 && h<h1) axis += `<span style="left:${Math.max(4,x)}%">${((h+11)%12)+1}${h<12||h==24?'a':'p'}</span>`;
   }
   // rows: one per slate with events this day
-  const bySlate = new Map();
-  for(const e of ev){ if(!bySlate.has(e.slate)) bySlate.set(e.slate, []); bySlate.get(e.slate).push(e); }
-  const rows = [...bySlate.entries()].sort((a,b)=> a[1][0].t-b[1][0].t || bySlate(a[0],b[0]));
+  const slateEvs = new Map();
+  for(const e of ev){ if(!slateEvs.has(e.slate)) slateEvs.set(e.slate, []); slateEvs.get(e.slate).push(e); }
+  const rows = [...slateEvs.entries()].sort((a,b)=> a[1][0].t-b[1][0].t || bySlate(a[0],b[0]));
   const nowLine = (now>hourMs(h0) && now<hourMs(h1)) ? `<div class="gnow" style="left:${pct(now)}%"></div>` : '';
   const body = rows.map(([s,es])=>{
     const startedBefore = slateEvents(s).some(e=>e.t<es[0].t) || s.games.some(g=>g.started);
