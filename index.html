@@ -454,7 +454,10 @@ function slateEvents(s){
 function allEvents(){ return Object.values(slates).flatMap(slateEvents).sort((a,b)=>a.t-b.t); }
 // within one time: by sport, then First Lock before Late Swap, then site
 const kindRank = e => e.kind=='first' ? 0 : 1;
-const bySportKind = (a,b) => a.slate.sport.localeCompare(b.slate.sport) || kindRank(a)-kindRank(b) || a.slate.site.localeCompare(b.slate.site);
+// within one lock time: DraftKings first, then FanDuel; leagues kept together within each site
+const siteRank = x => x.site=='DK' ? 0 : 1;
+const bySlate = (a,b) => siteRank(a)-siteRank(b) || a.sport.localeCompare(b.sport) || a.type.localeCompare(b.type);
+const bySportKind = (a,b) => siteRank(a.slate)-siteRank(b.slate) || a.slate.sport.localeCompare(b.slate.sport) || kindRank(a)-kindRank(b) || a.slate.type.localeCompare(b.slate.type);
 // lineups-done marks live on the slate (s.done[lockTime]) so they sync with it
 // lock marks live on the slate (s.done[lockTime]) so they sync with it.
 // Value = time*10 + state (0 clear, 1 swap needed, 2 done); older saves used +time = done, -time = cleared.
@@ -485,7 +488,7 @@ function render(){
   const now = Date.now();
   // sort by the next thing you need to do; finished slates last
   const nextOf = x => slateEvents(x).find(e=>e.t>now)?.t ?? 9e15;
-  const list = Object.values(slates).sort((a,b)=>nextOf(a)-nextOf(b));
+  const list = Object.values(slates).sort((a,b)=>nextOf(a)-nextOf(b) || bySlate(a,b));
   for(const s of list){
     const ev = slateEvents(s); const next = ev.find(e=>e.t>now && !isDone(s,e.t)); const nextT = next?.t;
     const anyFuture = ev.some(e=>e.t>now);
@@ -582,7 +585,7 @@ function renderDay(){
   // rows: one per slate with events this day
   const bySlate = new Map();
   for(const e of ev){ if(!bySlate.has(e.slate)) bySlate.set(e.slate, []); bySlate.get(e.slate).push(e); }
-  const rows = [...bySlate.entries()].sort((a,b)=> a[1][0].t-b[1][0].t || a[0].sport.localeCompare(b[0].sport));
+  const rows = [...bySlate.entries()].sort((a,b)=> a[1][0].t-b[1][0].t || bySlate(a[0],b[0]));
   const nowLine = (now>hourMs(h0) && now<hourMs(h1)) ? `<div class="gnow" style="left:${pct(now)}%"></div>` : '';
   const body = rows.map(([s,es])=>{
     const startedBefore = slateEvents(s).some(e=>e.t<es[0].t) || s.games.some(g=>g.started);
@@ -751,16 +754,16 @@ async function scheduleAlerts(auto){
     es = es.filter(e=>!sent[sentId(topic,t,e.slate.key)] && !isDone(e.slate, e.t));
     if(!es.length){ skipped++; continue; }
     es.sort(bySportKind);
-    const kinds = [...new Set(es.map(kindLabel))];
+    const kinds = ['First Lock','Late Swap'].filter(k=>es.some(e=>kindLabel(e)==k));
     const kind = kinds.join(' + ');
     const sendAt = +t - lead*60e3;
     if(sendAt - now > MAX_DELAY){ later++; continue; }
     const title = `${kind} at ${fmtTime(+t)} ET`;
-    const lines = []; let lastSport = '', lastKind = '';
+    // sections by site (DK first), leagues together inside each
+    const lines = []; let lastSite = '';
     for(const e of es){
-      if(e.slate.sport!==lastSport){ if(lines.length) lines.push(''); lines.push(e.slate.sport); lastSport=e.slate.sport; lastKind=''; }
-      if(kindLabel(e)!==lastKind){ lines.push(' '+kindLabel(e)+':'); lastKind=kindLabel(e); }
-      lines.push(`  • ${e.slate.site} ${e.slate.type} · ${slateDetail(e.slate)}` + (e.slate.games.length>2 ? ` (${e.games.join(', ')})` : ''));
+      if(e.slate.site!==lastSite){ if(lines.length) lines.push(''); lines.push(e.slate.site=='DK'?'DraftKings':'FanDuel'); lastSite=e.slate.site; }
+      lines.push(`  • ${e.slate.sport} ${e.slate.type} · ${slateDetail(e.slate)}` + (e.slate.games.length>2 ? ` (${e.games.join(', ')})` : '') + ` · ${kindLabel(e)}`);
     }
     const body = lines.join('\n');
     try{
