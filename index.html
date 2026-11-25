@@ -593,7 +593,8 @@ function renderDay(){
   const body = rows.map(([s,es])=>{
     const startedBefore = slateEvents(s).some(e=>e.t<es[0].t) || s.games.some(g=>g.started);
     const goesOn = slateEvents(s).some(e=>e.t>es[es.length-1].t); // more locks on a later day
-    const glow = upNext && es.some(e=>e.t==upNext && !isDone(s,e.t)); // in the next lock and not marked done
+    // glow: in the next lock, and either a First Lock not yet done, or a Late Swap flagged "swap needed"
+    const glow = upNext && es.some(e=>e.t==upNext && (e.kind=='first' ? !isDone(s,e.t) : isNeeded(s,e.t)));
     const lo = startedBefore ? 0 : pct(es[0].t), hi = goesOn ? 100 : pct(es[es.length-1].t);
     const ticks = es.map(e=>`<button class="gtick ${e.kind=='first'?'first':''} ${e.t<now?'past':''} ${isDone(e.slate,e.t)?'tdone':''} ${isNeeded(e.slate,e.t)?'tneed':''}" data-key="${encodeURIComponent(e.slate.key)}" data-t="${e.t}" style="left:${pct(e.t)}%" title="${fmtTime(e.t)} ${kindLabel(e)}: ${e.games.join(', ')}. ${markTitle(e.slate,e.t)}">${isDone(e.slate,e.t)?'✓':isNeeded(e.slate,e.t)?'!':''}</button><span class="gtime" style="left:${Math.min(95,Math.max(5,pct(e.t)))}%">${fmtTime(e.t).replace(':00','').replace(' ','').toLowerCase()}</span>`).join('');
     return `<div class="grow"><div class="glabel ${glow?'glow':''}" title="${s.site} ${s.sport} ${s.type} · ${slateDetail(s)}"><span class="pill ${s.site}">${s.site}</span> ${s.sport} ${s.type} <span class="muted">${slateDetail(s)}</span></div>
