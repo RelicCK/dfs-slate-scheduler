@@ -548,6 +548,7 @@ document.addEventListener('click', ev=>{
   const nextSt = kindAt(s,t)=='first' ? (st==2?0:2) : (st+1)%3;
   s.done[t] = Date.now()*10 + nextSt;
   save(); render(); changed();
+  rescheduleSoon(); // move this lock's alert to fit the work left
 });
 const kindLabel = e => e.kind=='first' ? 'First Lock' : 'Late Swap';
 
@@ -808,7 +809,7 @@ async function doPushSync(){
   const t = syncTopic(); if(!t) return;
   if(!LS.get('changedAt',0)) LS.set('changedAt', Date.now());
   try{
-    const body = await pack({v:1, at:LS.get('changedAt',0), slates:slimSlates(), sent:sentForSync()});
+    const body = await pack({v:1, at:LS.get('changedAt',0), slates:slimSlates(), sent:sentForSync(), sched:schedForSync()});
     // ntfy.sh turns messages over 4 KB into file attachments that expire after a few hours,
     // so bigger data goes out as several normal messages that the other device puts back together.
     const sig = t + '|' + hkey(body);
@@ -854,7 +855,8 @@ function mergeDone(list){
 }
 async function applyRemote(payloads, force){
   let best=null; const sent = sentMap();
-  for(const d of payloads){ if(d.v==1 && (!best || d.at>best.at)) best=d; if(d.sent) for(const [k,v] of Object.entries(d.sent)) if(k.split('|').length==3) sent[k]=v; }
+  for(const d of payloads){ if(d.v==1 && (!best || d.at>best.at)) best=d; if(d.sent) for(const [k,v] of Object.entries(d.sent)) if(k.split('|').length==3) sent[k]=v;
+    if(d.sched){ const sc = schedMap(); for(const [k,v] of Object.entries(d.sched)) if(!sc[k] || (v.at||0) > (sc[k].at||0)) sc[k]=v; LS.set('sched', sc); } }
   LS.set('sent3', sent);
   const local = LS.get('changedAt',0), haveLocal = Object.keys(slates).length>0;
   if(best && (best.at > local || (!haveLocal && best.slates.length))){
@@ -911,10 +913,10 @@ function liveSync(){
 }
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) pullSync(); });
 
-async function ntfy(topic, title, body, atSec){
+async function ntfy(topic, title, body, atSec, seq){
   const p = new URLSearchParams({title, tags:'lock', priority:'4'});
   if(atSec) p.set('at', String(atSec));
-  const r = await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}?${p}`, {method:'POST', body});
+  const r = await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}${seq?'/'+seq:''}?${p}`, {method:'POST', body});
   if(!r.ok) throw new Error('ntfy '+r.status);
 }
 // ntfy.sh holds scheduled messages for at most 3 days, so alerts further out are
@@ -932,55 +934,103 @@ function sentMap(){
   for(const [id,v] of Object.entries(LS.get('sent', {}))){ const p=id.split('|'); for(const k of p[p.length-1].split(';')) m[sentId(p[0],p[2],k)]=v; }
   LS.set('sent3', m); return m;
 }
+function schedForSync(){
+  const topic = (document.getElementById('topic').value||'').trim(), out={};
+  for(const [k,v] of Object.entries(schedMap())){ const p=k.split('|'); if(p[0]===topic && +p[1] > Date.now()-3600e3) out[k]=v; }
+  return out;
+}
 // only what's useful to other devices: this topic, locks not yet passed
 function sentForSync(){
   const topic = (document.getElementById('topic').value||'').trim(), now=Date.now(), out={};
   for(const [k,v] of Object.entries(sentMap())){ const p=k.split('|'); if(p[0]===topic && +p[1] > now-3600e3) out[k]=v; }
   return out;
 }
+// Alerts: one per lock time, published with a sequence ID per lock ("lk-<time>"). Publishing again with the
+// same ID replaces the still-scheduled alert on ntfy.sh, and a DELETE cancels it. So when you flag, unflag or
+// check off a slate, the alert for that lock moves to match the work left (or is cancelled when all done).
+// LS 'sched': "topic|lockTime" -> {sig, sendAt, nS, at}; shared with your other devices through sync.
+const schedMap = () => LS.get('sched', {});
+const seqId = t => 'lk-' + Math.round(+t/1000);
+async function ntfyDelete(topic, seq){
+  const r = await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}/${seq}/delete`); // GET form avoids a CORS preflight
+  if(!r.ok && r.status!=404) throw new Error('ntfy '+r.status);
+}
+// Check once a day, on a throwaway topic, that ntfy.sh really replaces and cancels scheduled alerts.
+// If it doesn't, alerts are never re-sent, so a lock can't get two.
+async function checkReplace(topic){
+  const c = LS.get('replaceOk', null); if(c && Date.now()-c.at < 86400e3) return c.ok;
+  const pt = `${topic}-probe-${Math.random().toString(36).slice(2,8)}`, base = `https://ntfy.sh/${encodeURIComponent(pt)}`;
+  const list = async()=> (await (await fetch(`${base}/json?poll=1&scheduled=1`)).text()).split('\n').filter(Boolean).map(l=>JSON.parse(l)).filter(m=>m.event=='message');
+  let ok = false;
+  try{
+    const at = Math.floor(Date.now()/1000) + 3600;
+    await fetch(`${base}/probe?at=${at}`, {method:'POST', body:'one'});
+    await fetch(`${base}/probe?at=${at}`, {method:'POST', body:'two'});
+    const a = await list();
+    await fetch(`${base}/probe/delete`);
+    const b = await list();
+    ok = a.length==1 && a[0].message=='two' && b.length==0;
+  }catch(e){ return false; } // network trouble: don't cache, try again next time
+  LS.set('replaceOk', {ok, at:Date.now()});
+  if(!ok) log('ntfy.sh did not replace a test alert, so alerts will stay at their first time (never sent twice).');
+  return ok;
+}
+let schedTimer = null;
+function rescheduleSoon(){ if(!LS.get('autoSchedule', false)) return; clearTimeout(schedTimer); schedTimer = setTimeout(()=>scheduleAlerts(true), 2500); }
 async function scheduleAlerts(auto){
   const topic = document.getElementById('topic').value.trim();
   const num = (id,d) => { const v = parseFloat(document.getElementById(id).value); return isFinite(v) && v>=0 ? v : d; };
   const mFirst = num('mFirst',3), mSwap = num('mSwap',4), mBuf = num('mBuf',5);
   if(!topic){ if(!auto) log('Enter your ntfy topic first.'); return; }
   LS.set('topic', topic); LS.set('timing', {mFirst, mSwap, mBuf}); LS.set('autoSchedule', true);
-  const sent = sentMap();
+  const sent = sentMap(), sched = schedMap();
+  const canMove = await checkReplace(topic);
   const now = Date.now();
-  // one alert per time, sectioned by sport, First Locks before Late Swaps
   const byT = {}; for(const e of allEvents()) if(e.t>now) (byT[e.t] ||= []).push(e);
-  let n=0, skipped=0, later=0;
-  for(let [t,es] of Object.entries(byT)){
-    // never alert the same slate twice for the same time, even if the format, lead time or device changes
-    // lead time = work at this lock (every slate not yet marked done) + buffer
-    const todo = es.filter(e=>!isDone(e.slate, e.t));
-    const nF = todo.filter(e=>e.kind=='first').length, nS = todo.length - nF;
+  let n=0, moved=0, cancelled=0, later=0;
+  for(const [t,all] of Object.entries(byT)){
+    const k = topic+'|'+t, prev = sched[k];
+    // work at this lock: first locks not yet done, and late swaps you've flagged "swap needed"
+    const todo = all.filter(e=>!isDone(e.slate, e.t)).sort(bySportKind);
+    const flagged = todo.filter(e=>e.kind!='first' && isNeeded(e.slate, e.t));
+    const nF = todo.filter(e=>e.kind=='first').length, nS = flagged.length;
     const work = nF*mFirst + nS*mSwap, lead = Math.max(1, Math.ceil(work + mBuf));
-    es = todo.filter(e=>!sent[sentId(topic,t,e.slate.key)]);
-    if(!es.length){ skipped++; continue; }
-    es.sort(bySportKind);
-    const kinds = ['First Lock','Late Swap'].filter(k=>es.some(e=>kindLabel(e)==k));
-    const kind = kinds.join(' + ');
-    const sendAt = +t - lead*60e3;
-    if(sendAt - now > MAX_DELAY){ later++; continue; }
-    const title = `${kind} at ${fmtTime(+t)} ET`;
-    // sections by site (DK first), leagues together inside each
-    const lines = []; let lastSite = '';
-    for(const e of es){
-      if(e.slate.site!==lastSite){ if(lines.length) lines.push(''); lines.push(e.slate.site=='DK'?'DraftKings':'FanDuel'); lastSite=e.slate.site; }
-      lines.push(`  • ${e.slate.sport} ${e.slate.type} · ${slateDetail(e.slate)}` + (e.slate.games.length>2 ? ` (${e.games.join(', ')})` : '') + ` · ${kindLabel(e)}`);
+    if(!todo.length){ // everything at this lock is done: cancel its alert if it hasn't gone out yet
+      if(canMove && prev && prev.sendAt > now){ try{ await ntfyDelete(topic, seqId(t)); delete sched[k]; cancelled++; }catch(err){ log('Failed to cancel alert: '+err.message); } }
+      continue;
     }
-    lines.push('', `About ${Math.ceil(work)} min of work (${[nF?`${nF} first lock${nF==1?'':'s'}`:'', nS?`${nS} late swap${nS==1?'':'s'}`:''].filter(Boolean).join(', ')}) + ${mBuf} min buffer`);
+    // an alert from the older version (no sequence ID) is already queued and can't be changed; never add a second one
+    if(!prev && todo.some(e=>sent[sentId(topic,t,e.slate.key)])) continue;
+    let sendAt = +t - lead*60e3;
+    if(sendAt - now > MAX_DELAY){ later++; continue; }
+    // exactly one alert per lock time: once it has gone out, it isn't sent again
+    if(prev && (prev.sendAt <= now || !canMove)) continue;
+    const kinds = ['First Lock','Late Swap'].filter(kd=>todo.some(e=>kindLabel(e)==kd));
+    const title = nS ? `Swap needed by ${fmtTime(+t)} ET` : `${kinds.join(' + ')} at ${fmtTime(+t)} ET`;
+    const lines = []; let lastSite = '';
+    for(const e of todo){
+      if(e.slate.site!==lastSite){ if(lines.length) lines.push(''); lines.push(e.slate.site=='DK'?'DraftKings':'FanDuel'); lastSite=e.slate.site; }
+      const need = flagged.includes(e), note = noteOf(e.slate,e.t).split('\n')[0];
+      lines.push(`  • ${e.slate.sport} ${e.slate.type} · ${slateDetail(e.slate)}` + (e.slate.games.length>2 ? ` (${e.games.join(', ')})` : '') + ` · ${need ? 'Swap needed' : kindLabel(e)}` + (need && note ? ` — ${note}` : ''));
+    }
+    lines.push('', work ? `About ${Math.ceil(work)} min of work (${[nF?`${nF} first lock${nF==1?'':'s'}`:'', nS?`${nS} flagged swap${nS==1?'':'s'}`:''].filter(Boolean).join(', ')}) + ${mBuf} min buffer` : `Check for late swaps (${mBuf} min before lock)`);
     const body = lines.join('\n');
+    const sig = hkey(title+'\n'+body+'\n'+Math.round(sendAt/60e3));
+    if(prev && prev.sig===sig) continue;
+    const at = sendAt > now + 15e3 ? Math.floor(sendAt/1000) : null;
     try{
-      await ntfy(topic, title, body, sendAt > now + 15e3 ? Math.floor(sendAt/1000) : null);
-      for(const e of es) sent[sentId(topic,t,e.slate.key)] = Date.now(); n++;
+      await ntfy(topic, title, body, at, seqId(t));
+      if(prev && prev.sendAt > now) moved++; else n++;
+      sched[k] = {sig, sendAt: at ? sendAt : now, nS, at: Date.now()};
+      for(const e of flagged) sent[sentId(topic,t,'need:'+e.slate.key)] = Date.now();
     }catch(err){ log('Failed to schedule '+title+': '+err.message); }
   }
+  for(const [k,v] of Object.entries(sched)) if(v.sendAt < now - 86400e3) delete sched[k];
   for(const [k,v] of Object.entries(sent)) if(v < now - 4*86400e3) delete sent[k];
-  LS.set('sent3', sent);
-  if(n) pushSync(); // tell your other devices what's already scheduled
-  if(auto && !n) return;
-  log(`Scheduled ${n} alert${n==1?'':'s'} (${mFirst} min per first lock, ${mSwap} per late swap, + ${mBuf} buffer)${skipped?`, ${skipped} already scheduled`:''}.` +
+  LS.set('sched', sched); LS.set('sent3', sent);
+  if(n || moved || cancelled) pushSync(); // tell your other devices what's scheduled
+  if(auto && !n && !moved && !cancelled) return;
+  log(`Alerts: ${n} new${moved?`, ${moved} moved`:''}${cancelled?`, ${cancelled} cancelled (all done)`:''} (${mFirst} min per first lock, ${mSwap} per flagged swap, + ${mBuf} buffer).` +
       (later ? ` ${later} more ${later==1?'is':'are'} over 3 days out and will be scheduled when you open this page closer to then.` : ''));
 }
 
