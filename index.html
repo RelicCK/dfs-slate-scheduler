@@ -95,7 +95,6 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px}
 .act.first{color:var(--warn)}
 .cd{font-weight:600;background:var(--soft);border-radius:6px;padding:1px 6px;font-variant-numeric:tabular-nums}
 .soon .cd{background:var(--warn);color:#fff}
-.open{font-size:13px;color:var(--accent);text-decoration:none;white-space:nowrap}
 table.sched{table-layout:fixed;margin-top:6px}
 table.sched col.c1{width:112px}
 table.sched col.c3{width:84px}
@@ -564,7 +563,6 @@ function render(){
     const soon = next && next.t-now < 3600e3;
     const d = document.createElement('div'); d.className='card slate'+(soon?' soon':'')+(anyFuture?'':' done');
     const entries = s.contests.reduce((n,c)=>n+c.entries,0);
-    const link = s.site=='DK' ? 'https://www.draftkings.com/mycontests' : 'https://www.fanduel.com/upcoming';
     const single = ev.filter(e=>e.t>now).length==1 && !s.games.some(g=>g.started) && ev.length==1;
     const needed = ev.filter(e=>e.t>now && isNeeded(s,e.t));
     const action = next
@@ -572,7 +570,7 @@ function render(){
       : anyFuture ? `<span class="okdone">✓ Lineups done</span>` + (single ? ` <span class="muted">· ${kindLabel(ev[ev.length-1])} ${when(ev[ev.length-1].t)}</span>` : '')
       : `<span class="muted">All games started</span>`;
     d.innerHTML = `<div class="slate-h"><div class="sh-title"><span class="pill ${s.site}">${s.site}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <strong>${slateDetail(s)}</strong></div><button class="x" title="Remove">✕</button></div>
-      <div class="actbar"><div>${action}</div><div class="actr"><a class="open" href="${link}" target="_blank" rel="noopener">Open ${s.site} ↗</a>${single ? noteBtn(s, ev[0].t) + doneBtn(s, ev[0].t) : ''}</div></div>${single ? noteLine(s, ev[0].t) : ''}`;
+      <div class="actbar"><div>${action}</div><div class="actr">${single ? noteBtn(s, ev[0].t) + doneBtn(s, ev[0].t) : ''}</div></div>${single ? noteLine(s, ev[0].t) : ''}`;
     const t = document.createElement('table'); t.className='sched';
     t.innerHTML = '<colgroup><col class="c1"><col><col class="c3"><col class="c4"></colgroup>';
     // rows: collapse everything already locked into one line, show what's left
