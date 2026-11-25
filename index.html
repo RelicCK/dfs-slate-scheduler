@@ -114,6 +114,10 @@ tr.isdone td:nth-child(2), .isdone .muted{text-decoration:line-through}
 .tle>button.chk{flex:none}
 #timeline button.chk{margin:1px 4px 1px 0}
 #timeline .isdone button.chk{opacity:1}
+.notes{margin-top:4px}
+.notes summary{cursor:pointer;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.notes .npre{color:var(--ink)}
+.notes textarea{display:block;width:100%;margin-top:4px;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);resize:vertical}
 .actr{display:flex;align-items:center;gap:10px}
 .actr button.chk{margin-right:5px}
 .okdone{color:var(--dk);font-weight:700}
@@ -485,7 +489,27 @@ document.addEventListener('click', ev=>{
 const kindLabel = e => e.kind=='first' ? 'First Lock' : 'Late Swap';
 
 // ---------- render ----------
+// ---------- slate notes ----------
+let noteEditing = null, noteTimer = null; const openNotes = new Set();
+function noteBox(s){
+  const txt = s.note?.text || '', open = openNotes.has(s.key);
+  const first = txt.split('\n')[0];
+  const det = document.createElement('details'); det.className='notes'; det.open = open;
+  det.innerHTML = `<summary>${txt ? `📝 <span class="npre">${first.replace(/[<&]/g,c=>c=='<'?'&lt;':'&amp;')}</span>` : '<span class="muted">+ Add note</span>'}</summary><textarea rows="3" placeholder="e.g. swap all lineups off X / only the 3 lineups with Y"></textarea>`;
+  const ta = det.querySelector('textarea'); ta.value = txt;
+  det.ontoggle = ()=>{ det.open ? openNotes.add(s.key) : openNotes.delete(s.key); if(det.open) ta.focus(); };
+  ta.onfocus = ()=>{ noteEditing = s.key; };
+  ta.oninput = ()=>{
+    s.note = {text: ta.value, at: Date.now()};
+    const pre = det.querySelector('summary');
+    pre.innerHTML = ta.value ? `📝 <span class="npre">${ta.value.split('\n')[0].replace(/[<&]/g,c=>c=='<'?'&lt;':'&amp;')}</span>` : '<span class="muted">+ Add note</span>';
+    clearTimeout(noteTimer); noteTimer = setTimeout(()=>{ save(); changed(); }, 800);
+  };
+  ta.onblur = ()=>{ noteEditing = null; clearTimeout(noteTimer); save(); changed(); render(); };
+  return det;
+}
 function render(){
+  if(noteEditing) return; // don't redraw under someone typing a note
   prune();
   const el = document.getElementById('slates'); el.innerHTML='';
   const now = Date.now();
@@ -531,6 +555,7 @@ function render(){
       t.appendChild(tr);
     }
     if(t.rows.length) d.appendChild(t);
+    d.appendChild(noteBox(s));
     const det = document.createElement('details');
     det.innerHTML = `<summary>${entries} entries · ${s.contests.length} contest${s.contests.length==1?'':'s'}</summary><div class="small">${s.contests.map(c=>`${c.name} · ${c.fee} × ${c.entries}`).join('<br>')}</div>` +
       (s.site=='FD' ? `<div class="small muted" style="margin-top:4px">Times from: ${[...new Set(s.games.map(g=>g.src).filter(Boolean))].join(', ')||'none'}</div>`:'');
@@ -598,7 +623,7 @@ function renderDay(){
     const glow = upNext && es.some(e=>e.t==upNext && (e.kind=='first' ? !isDone(s,e.t) : isNeeded(s,e.t)));
     const lo = startedBefore ? 0 : pct(es[0].t), hi = goesOn ? 100 : pct(es[es.length-1].t);
     const ticks = es.map(e=>`<button class="gtick ${e.kind=='first'?'first':''} ${e.t<now?'past':''} ${isDone(e.slate,e.t)?'tdone':''} ${isNeeded(e.slate,e.t)?'tneed':''}" data-key="${encodeURIComponent(e.slate.key)}" data-t="${e.t}" style="left:${pct(e.t)}%" title="${fmtTime(e.t)} ${kindLabel(e)}: ${e.games.join(', ')}. ${markTitle(e.slate,e.t)}">${isDone(e.slate,e.t)?'✓':isNeeded(e.slate,e.t)?'!':''}</button><span class="gtime" style="left:${Math.min(95,Math.max(5,pct(e.t)))}%">${fmtTime(e.t).replace(':00','').replace(' ','').toLowerCase()}</span>`).join('');
-    return `<div class="grow"><div class="glabel ${glow?'glow':''}" title="${s.site} ${s.sport} ${s.type} · ${slateDetail(s)}"><span class="pill ${s.site}">${s.site}</span> ${s.sport} ${s.type} <span class="muted">${slateDetail(s)}</span></div>
+    return `<div class="grow"><div class="glabel ${glow?'glow':''}" title="${s.site} ${s.sport} ${s.type} · ${slateDetail(s)}"><span class="pill ${s.site}">${s.site}</span> ${s.sport} ${s.type} <span class="muted">${slateDetail(s)}</span>${s.note?.text ? ' <span title="Has a note">📝</span>' : ''}</div>
       <div class="gtrack">${grid}${nowLine}<div class="gbar ${s.site} ${startedBefore?'cont':''} ${goesOn?'more':''}" style="left:${lo}%;width:${Math.max(hi-lo,0.8)}%"></div>${ticks}</div></div>`;
   }).join('');
   const dayLabel = (dayKey==todayKey()?'Today, ':(dayKey==etDateKey(now+864e5)?'Tomorrow, ':'')) + fmtDay(hourMs(12));
@@ -619,7 +644,7 @@ function tick(){
   const dayPfx = etDateKey(n.t)==todayKey() ? '' : new Date(n.t).toLocaleDateString('en-US',{timeZone:TZ,weekday:'short'})+' ';
   c.textContent = `next lock ${dayPfx}${fmtTime(n.t)} (in ${m>=60?Math.floor(m/60)+'h '+(m%60)+'m':m+'m'})`;
 }
-setInterval(()=>{ render(); }, 60000);
+setInterval(()=>{ if(!noteEditing) render(); }, 60000);
 
 // ---------- ntfy ----------
 function log(msg){ const l=document.getElementById('log'); l.textContent = (msg+'\n'+l.textContent).slice(0,3000); document.getElementById('lastLog').textContent = msg; }
@@ -639,7 +664,7 @@ async function unpack(b64){
 function slimSlates(){
   return Object.values(slates).map(x=>({key:x.key, site:x.site, sport:x.sport, type:x.type, date:x.date, slateId:x.slateId, addedAt:x.addedAt,
     games:x.games.map(g=>({label:g.label, away:g.away, home:g.home, ms:g.ms, src:g.src, started:g.started, teams:g.teams})),
-    contests:x.contests.map(c=>({name:c.name, fee:c.fee, entries:c.entries})), done:x.done}));
+    contests:x.contests.map(c=>({name:c.name, fee:c.fee, entries:c.entries})), done:x.done, note:x.note}));
 }
 function syncStatus(msg, bad){ const el=document.getElementById('syncStatus'); const marks = Object.values(slates).reduce((n,x)=>n+Object.values(x.done||{}).filter(v=>markOf(v).st==2).length,0);
   const topic = (document.getElementById('topic').value||'').trim();
@@ -660,8 +685,12 @@ function changed(){ LS.set('changedAt', Date.now()); pushSync(); }
 // merge done marks from other devices: for each lock, the most recent tick/untick wins
 function mergeDone(list){
   let changedLocal=false, remoteBehind=false;
-  const remote = {}; for(const x of list) remote[x.key]=x.done||{};
+  const remote = {}, notes = {}; for(const x of list){ remote[x.key]=x.done||{}; if(x.note) notes[x.key]=x.note; }
   for(const sl of Object.values(slates)){
+    // notes: newest edit wins
+    const rn = notes[sl.key], ln = sl.note;
+    if(rn && (!ln || rn.at > ln.at)){ if(!(noteEditing && noteEditing===sl.key)){ sl.note = rn; changedLocal = true; } }
+    else if(ln && (!rn || ln.at > rn.at) && remote[sl.key]) remoteBehind = true;
     const r = remote[sl.key]; if(!r) continue;
     sl.done ||= {};
     for(const t of new Set([...Object.keys(r), ...Object.keys(sl.done)])){
