@@ -296,9 +296,10 @@ VIEWS.overview = () => {
   const dfFmt = (a,b,d,sx,dir) => { const df = ok(a)&&ok(b) ? a-b : null; if(!ok(df)) return {t:'', c:''};
     if(Math.abs(df)<1e-9) return {t:'=', c:'z'};
     return {t:(df>0?'+':'−')+(d===0?Math.abs(Math.round(df)):Math.abs(df).toFixed(d))+(sx==='%'?' pp':sx), c: !dir ? 'z' : (df*dir>0 ? 'pos' : 'neg')}; };
-  const comps = [{u:'Field', m:field, field:true}, ...others];
+  const comps = [...others, {u:'Field', m:field, field:true}];
   const ncol = 2 + comps.length*2;
-  const winInp = p => `<input type="number" class="sm" data-win="${esc(C.baseUser(p.u))}" value="${S.winnings[C.baseUser(p.u)]??''}" step="any" min="0" style="width:84px" placeholder="optional">`;
+  const narrow = matchMedia('(max-width:600px)').matches, STATW = narrow ? 118 : 196, MEW = 84, VALW = 80, DIFW = 84;
+  const winInp = p => `<input type="number" class="sm" data-win="${esc(C.baseUser(p.u))}" value="${S.winnings[C.baseUser(p.u)]??''}" step="any" min="0" placeholder="$">`;
   let zi = 0;
   const body = cmpRows.map(r=>{
     if(typeof r==='string'){ zi = 0; return `<tr class="sec"><td colspan="${ncol}">${r}</td></tr>`; }
@@ -308,8 +309,8 @@ VIEWS.overview = () => {
     const y = get(you), noDiff = l==='Entries'||l==='Distinct builds';
     return `<tr${z}>${lab}<td class="n me">${v(y,d,sx)}</td>${comps.map(p=>{ const pv = get(p.m), pd = noDiff ? {t:'',c:''} : dfFmt(y,pv,d,sx,dir);
       return `<td class="n cv">${v(pv,d,sx)}</td><td class="dv ${pd.c}"${pd.t?` title="${esc(me())} − ${esc(p.u)}"`:''}>${pd.t}</td>`; }).join('')}</tr>`; }).join('');
-  h += `<div class="card"><h3>${esc(me()||'You')} vs the field and tracked players</h3>${you ? `<div class="tw free cmpw"><table class="cmp"><thead><tr><th class="st">Stat</th><th class="n me">${esc(me())}</th>${comps.map(p=>`<th class="n cv" colspan="2">${esc(p.u)}<span class="sub">value · ${esc(me())} ±</span></th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>
-    <div class="note">Each column pair shows that player's (or the field's) value, then ${esc(me())} minus it. <span class="pos">Green</span> is better for you (more unique, higher projection, less given up), <span class="neg">red</span> is worse, = is a tie. pp = percentage points. Field figures count every valid field entry once, the same way players' do. Est. ROI needs the entry fee; type real winnings to get exact ROI.${absent.length ? ` Not in this contest: ${absent.map(p=>esc(p.u)).join(', ')}.` : ''}</div>` : `<div class="muted small">${esc(me()||'Your username')} has no entries in this contest.</div>`}</div>`;
+  h += `<div class="card"><h3>${esc(me()||'You')} vs tracked players and the field</h3>${you ? `<div class="tw free cmpw"><table class="cmp" style="width:${STATW+MEW+comps.length*(VALW+DIFW)}px"><colgroup><col style="width:${STATW}px"><col style="width:${MEW}px">${comps.map(()=>`<col style="width:${VALW}px"><col style="width:${DIFW}px">`).join('')}</colgroup><thead><tr><th class="st">Stat</th><th class="n me">${esc(me())}</th>${comps.map(p=>`<th class="n cv" colspan="2" title="${esc(p.u)}">${esc(p.u)}<span class="sub">value · ${esc(me())} ±</span></th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>
+    <div class="note">Each column pair shows that player's value (the field is on the far right), then ${esc(me())} minus it. <span class="pos">Green</span> is better for you (more unique, higher projection, less given up), <span class="neg">red</span> is worse, = is a tie. pp = percentage points. Field figures count every valid field entry once, the same way players' do. Est. ROI needs the entry fee; type real winnings to get exact ROI.${absent.length ? ` Not in this contest: ${absent.map(p=>esc(p.u)).join(', ')}.` : ''}</div>` : `<div class="muted small">${esc(me()||'Your username')} has no entries in this contest.</div>`}</div>`;
   const rows = [['Field, per entry', C.dupeStats(times.map(t=>t-1))], ['Field, per distinct build', C.dupeStats(A.glist.map(g=>g.count-1))]];
   for(const u of trackedList()){ const m = userMetrics(u); rows.push([u+(u===me()?' (you)':''), m && m.n ? m.dupes : null]); }
   h += `<div class="grid2"><div class="card"><h3>Field: times played</h3>${distBars(times)}<div class="note">Share of valid field entries whose exact lineup was played that many times (including themselves).</div></div>
