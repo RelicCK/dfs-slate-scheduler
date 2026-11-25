@@ -267,21 +267,24 @@ VIEWS.overview = () => {
     return {u, m:{...m, bestU: ok(bu)?bu:null, exact: w!==null && A.fee && all.length ? (w/(all.length*A.fee)-1)*100 : null}}; });
   const you = players[0]?.m;
   const g = (k, sub) => m => m ? (sub ? m[k]?.[sub] : m[k]) : null;
-  const cmpRows = [ // [label, getter, decimals, suffix, better: 1 higher / -1 lower / 0 neutral, tip]
+  const cmpRows = [ // [label, getter, decimals, suffix, better: 1 higher / -1 lower / 0 neutral, tip]; strings are section headings
+    'Volume',
     ['Entries', g('n'), 0, '', 0, 'Valid lineups'],
     ['Distinct builds', g('distinct'), 0, '', 0],
     ['Distinct builds per entry', m=>m&&m.n ? m.distinct/m.n*100 : null, 1, '%', 0, 'Distinct lineups ÷ entries'],
+    'Duplication',
     ['Unique entries', g('dupes','unique'), 1, '%', 1, 'Share of entries whose exact lineup nobody else played'],
     ['≤1 dupe', g('dupes','le1'), 1, '%', 1], ['≤4 dupes', g('dupes','le4'), 1, '%', 1],
     ['Avg dupes', g('dupes','avg'), 2, '', -1, 'Other entries with the same lineup, averaged over entries'],
     ['Median dupes', g('dupes','median'), 0, '', -1], ['P75 dupes', g('dupes','p75'), 0, '', -1], ['P90 dupes', g('dupes','p90'), 0, '', -1],
     ['Max times played', m=>m && ok(m.dupes.max) ? m.dupes.max+1 : null, 0, '×', -1],
-    ...(A.pm ? [
+    ...(A.pm ? ['Projection',
     ['Avg projection', g('avgProj'), 2, '', 1, 'Per entry, fully projected lineups only'],
     ['Max projection', g('myMax'), 2, '', 1, 'Field: the contest ceiling'],
     ['Best unique projection', g('bestU'), 2, '', 1, 'Highest projection among lineups played only once'],
     ['Avg contest loss', g('avgContestLoss'), 2, '', -1, 'Contest ceiling − lineup projection'],
     ['Avg efficiency gap', g('avgGap'), 2, '', -1, 'Best field projection played no more often − lineup projection']] : []),
+    'Results',
     ['Avg points', g('avgPoints'), 2, '', 1],
     ['Top 1%', g('top1'), 2, '%', 1, 'Share of entries ranked in the top 1% of the field'],
     ['Top 0.1%', g('top01'), 2, '%', 1],
@@ -289,19 +292,24 @@ VIEWS.overview = () => {
     ['Winnings $', 'win', 2, '', 0, 'Actual winnings from DraftKings, if you have them'],
     ['Exact ROI', g('exact'), 1, '%', 1, 'From the actual winnings entered above']];
   const v = (x,d,sx) => ok(x) ? (d===0 ? int(x) : x.toFixed(d))+sx : '—';
-  const others = players.slice(1);
-  const shown = cmpRows;
-  const dfFmt = (a,b,d,sx,dir) => { const df = ok(a)&&ok(b) ? a-b : null; if(!ok(df)) return {t:'—', c:''};
-    return {t:(df>0?'+':'')+(d===0?Math.round(df):df.toFixed(d))+(sx==='%'?' pp':sx), c: !dir || Math.abs(df)<1e-9 ? '' : (df*dir>0 ? 'pos' : 'neg')}; };
-  h += `<div class="card"><h3>${esc(me()||'You')} vs tracked players and the field</h3>${you ? `<div class="tw free" style="display:inline-block;max-width:100%"><table class="cmp"><thead><tr><th>Stat</th><th class="n">${esc(me())}</th><th class="n">Field</th><th class="n" title="${esc(me())} − field">Diff</th>${others.map(p=>`<th class="n">${esc(p.u)}</th>`).join('')}</tr></thead><tbody>${shown.map(([l,get,d,sx,dir,tip])=>{
-      if(get==='win'){ const inp = p => p.m ? `<input type="number" class="sm" data-win="${esc(C.baseUser(p.u))}" value="${S.winnings[C.baseUser(p.u)]??''}" step="any" min="0" style="width:88px" placeholder="optional">` : '';
-        return `<tr><td title="${esc(tip)}">${l}</td><td class="n">${inp(players[0])}</td><td class="n muted">—</td><td></td>${others.map(p=>`<td class="n">${inp(p)}</td>`).join('')}</tr>`; }
-      const y = get(you), fl = get(field), noDiff = l==='Entries'||l==='Distinct builds', fd = dfFmt(y,fl,d,sx,dir);
-      const pcell = p => { if(!p.m) return l==='Entries' ? '<span class="muted">not entered</span>' : '';
-        const pv = get(p.m), pd = dfFmt(y,pv,d,sx,dir);
-        return `${v(pv,d,sx)}${!noDiff&&ok(pv)&&ok(y) ? `<div class="vs ${pd.c}" title="${esc(me())} − ${esc(p.u)}">${pd.t}</div>` : ''}`; };
-      return `<tr><td ${tip?`title="${esc(tip)}"`:''}>${l}</td><td class="n"><b>${v(y,d,sx)}</b></td><td class="n">${v(fl,d,sx)}</td><td class="n ${noDiff?'':fd.c}">${noDiff ? '' : fd.t}</td>${others.map(p=>`<td class="n">${pcell(p)}</td>`).join('')}</tr>`; }).join('')}</tbody></table></div>
-    <div class="note">Field figures count every valid field entry once, the same way players' do. Diff is ${esc(me())} − field, and the small line under each player is ${esc(me())} − that player: green is better for you (more unique, higher projection, less given up), red is worse. pp = percentage points. Est. ROI needs the entry fee; type real winnings to get exact ROI.</div>` : `<div class="muted small">${esc(me()||'Your username')} has no entries in this contest.</div>`}</div>`;
+  const others = players.slice(1).filter(p=>p.m), absent = players.slice(1).filter(p=>!p.m);
+  const dfFmt = (a,b,d,sx,dir) => { const df = ok(a)&&ok(b) ? a-b : null; if(!ok(df)) return {t:'', c:''};
+    if(Math.abs(df)<1e-9) return {t:'=', c:'z'};
+    return {t:(df>0?'+':'−')+(d===0?Math.abs(Math.round(df)):Math.abs(df).toFixed(d))+(sx==='%'?' pp':sx), c: !dir ? 'z' : (df*dir>0 ? 'pos' : 'neg')}; };
+  const comps = [{u:'Field', m:field, field:true}, ...others];
+  const ncol = 2 + comps.length*2;
+  const winInp = p => `<input type="number" class="sm" data-win="${esc(C.baseUser(p.u))}" value="${S.winnings[C.baseUser(p.u)]??''}" step="any" min="0" style="width:84px" placeholder="optional">`;
+  let zi = 0;
+  const body = cmpRows.map(r=>{
+    if(typeof r==='string'){ zi = 0; return `<tr class="sec"><td colspan="${ncol}">${r}</td></tr>`; }
+    const [l,get,d,sx,dir,tip] = r, z = (zi++)%2 ? ' class="z"' : '';
+    const lab = `<td class="st"${tip?` title="${esc(tip)}"`:''}>${l}</td>`;
+    if(get==='win') return `<tr${z}>${lab}<td class="n me">${winInp(players[0])}</td>${comps.map(p=>`<td class="n cv">${p.field?'<span class="muted">—</span>':winInp(p)}</td><td class="dv"></td>`).join('')}</tr>`;
+    const y = get(you), noDiff = l==='Entries'||l==='Distinct builds';
+    return `<tr${z}>${lab}<td class="n me">${v(y,d,sx)}</td>${comps.map(p=>{ const pv = get(p.m), pd = noDiff ? {t:'',c:''} : dfFmt(y,pv,d,sx,dir);
+      return `<td class="n cv">${v(pv,d,sx)}</td><td class="dv ${pd.c}"${pd.t?` title="${esc(me())} − ${esc(p.u)}"`:''}>${pd.t}</td>`; }).join('')}</tr>`; }).join('');
+  h += `<div class="card"><h3>${esc(me()||'You')} vs the field and tracked players</h3>${you ? `<div class="tw free cmpw"><table class="cmp"><thead><tr><th class="st">Stat</th><th class="n me">${esc(me())}</th>${comps.map(p=>`<th class="n cv" colspan="2">${esc(p.u)}<span class="sub">value · ${esc(me())} ±</span></th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>
+    <div class="note">Each column pair shows that player's (or the field's) value, then ${esc(me())} minus it. <span class="pos">Green</span> is better for you (more unique, higher projection, less given up), <span class="neg">red</span> is worse, = is a tie. pp = percentage points. Field figures count every valid field entry once, the same way players' do. Est. ROI needs the entry fee; type real winnings to get exact ROI.${absent.length ? ` Not in this contest: ${absent.map(p=>esc(p.u)).join(', ')}.` : ''}</div>` : `<div class="muted small">${esc(me()||'Your username')} has no entries in this contest.</div>`}</div>`;
   const rows = [['Field, per entry', C.dupeStats(times.map(t=>t-1))], ['Field, per distinct build', C.dupeStats(A.glist.map(g=>g.count-1))]];
   for(const u of trackedList()){ const m = userMetrics(u); rows.push([u+(u===me()?' (you)':''), m && m.n ? m.dupes : null]); }
   h += `<div class="grid2"><div class="card"><h3>Field: times played</h3>${distBars(times)}<div class="note">Share of valid field entries whose exact lineup was played that many times (including themselves).</div></div>
