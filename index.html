@@ -68,12 +68,12 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px}
 /* wide screens: use the width, two columns, one-line day-view rows */
 @media (min-width:1000px){
   main{max-width:none;padding:14px 24px}
-  .layout{display:grid;grid-template-columns:minmax(560px,42%) minmax(0,1fr);gap:16px;align-items:start}
+  .layout{display:grid;grid-template-columns:minmax(0,3fr) minmax(460px,2fr);gap:16px;align-items:start}
   #timelineCard{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;margin:0}
   #slates{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
   #slates .card{margin:0}
   #settings{max-width:900px}
-  .grow,.gaxrow{display:grid;grid-template-columns:270px minmax(0,1fr);align-items:center;gap:10px}
+  .grow,.gaxrow{display:grid;grid-template-columns:330px minmax(0,1fr);align-items:center;gap:10px}
   .grow{padding:2px 0}
   .glabel{margin:0;font-size:12.5px}
   .gtrack{height:32px}
@@ -134,12 +134,8 @@ button.gtick:hover{transform:scale(1.15)}
   .gbody .gbar{top:calc(50% - 8px)}
   .gbody .gtime{top:calc(50% + 6px)}
   #slates{grid-template-columns:minmax(0,1fr);gap:8px}
-  .slate{padding:7px 11px;font-size:13.5px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:14px;align-items:center}
-  .slate .slate-h{display:contents}
-  .slate .sh-title{grid-column:1;white-space:nowrap}
-  .slate .actbar{grid-column:2;margin:0}
-  .slate .x{grid-column:3;grid-row:1}
-  .slate table.sched, .slate details{grid-column:1 / -1}
+  .slate{padding:7px 11px;font-size:13.5px}
+  #slates{container-type:inline-size}
   .slate .sh-title{line-height:1.4}
   .slate .pill{font-size:11px;padding:1px 6px}
   .slate .x{padding:0 4px}
@@ -149,6 +145,15 @@ button.gtick:hover{transform:scale(1.15)}
   table.sched col.c1{width:96px}
   button.chk{width:20px;height:20px;font-size:12px}
   #slates details{margin-top:2px;font-size:12px}
+}
+/* when the card column is wide enough, title and next action share one line */
+@container (min-width:720px){
+  .slate{display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:14px;align-items:center}
+  .slate .slate-h{display:contents}
+  .slate .sh-title{grid-column:1;white-space:nowrap}
+  .slate .actbar{grid-column:2;margin:0}
+  .slate .x{grid-column:3;grid-row:1}
+  .slate table.sched, .slate details{grid-column:1 / -1}
 }
 </style>
 </head>
