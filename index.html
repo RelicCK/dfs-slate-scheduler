@@ -23,6 +23,9 @@ h1{font-size:22px;margin:4px 0 2px}
 body.over main{outline:3px dashed var(--accent);outline-offset:-6px}
 button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+a.navlink{font-size:14px;color:var(--accent);text-decoration:none;padding:7px 6px}
+.top h1{white-space:nowrap}.top>.row{flex-wrap:nowrap}
+@media (max-width:420px){.top>.row{gap:4px}a.navlink{padding:7px 3px}#addFiles{padding:7px 9px;white-space:nowrap}.top h1{font-size:20px}}
 input[type=text],input[type=number],input[type=time],select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .muted{color:var(--muted)}
@@ -198,6 +201,7 @@ button.gtick:hover{transform:scale(1.15)}
   <div class="top">
     <h1>Slate Locks</h1>
     <div class="row">
+      <a class="navlink" href="analytics.html" title="Post-contest analytics: duplication, projections, lineup sets, history">Analytics</a>
       <button class="primary" id="addFiles">+ Add files</button>
       <button id="gear" title="Settings" aria-label="Settings">⚙</button>
     </div>
@@ -447,11 +451,20 @@ async function handleFiles(files){
       if(old.done) s.done = old.done; if(old.notes) s.notes = old.notes; // keep marks and notes
     }
     slates[s.key] = s;
+    rememberContests(s);
     log(`Loaded ${f.name}: ${s.site} ${s.sport} ${s.type}, ${s.contests.reduce((n,c)=>n+c.entries,0)} entries, ${s.games.length} games`);
   }
   for(const s of Object.values(slates)) if(s.site=='FD') await resolveFD(s);
   save(); render(); changed();
   if(LS.get('autoSchedule', false)) scheduleAlerts(true);
+}
+
+// contest details (name, fee) for the Analytics page, kept 120 days after slates are pruned
+function rememberContests(s){
+  const cm = LS.get('contestMeta', {}), cut = Date.now() - 120*86400e3;
+  for(const c of s.contests) if(c.id) cm[c.id] = {name:c.name, fee:c.fee, site:s.site, sport:s.sport, type:s.type, date:s.date, at:Date.now()};
+  for(const [k,v] of Object.entries(cm)) if((v.at||0) < cut) delete cm[k];
+  LS.set('contestMeta', cm);
 }
 
 // ---------- events ----------
