@@ -148,12 +148,6 @@ button.gtick{-webkit-touch-callout:none;-webkit-user-select:none;user-select:non
 .glabel .gtxt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
 #noteDlg{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--card);color:var(--ink);width:min(440px,calc(100vw - 32px));box-shadow:0 10px 40px rgba(0,0,0,.25)}
 .sh-r{display:flex;align-items:center;gap:4px;flex:none}
-.ssb{font-size:11.5px;font-weight:700;letter-spacing:.02em;padding:2px 7px;border-radius:6px;border:1px dashed var(--line);background:transparent;color:var(--muted);text-decoration:none;white-space:nowrap;line-height:1.4;cursor:pointer;-webkit-touch-callout:none;align-self:center}
-.ssb.on{border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
-.ssb:hover{border-color:var(--accent);color:var(--accent)}
-#ssDlg{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--card);color:var(--ink);width:min(460px,calc(100vw - 32px));box-shadow:0 10px 40px rgba(0,0,0,.25)}
-#ssDlg::backdrop{background:rgba(0,0,0,.35)}
-#ssIn{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);box-sizing:border-box}
 #noteDlg::backdrop{background:rgba(0,0,0,.35)}
 #noteDlg .row{display:flex;justify-content:flex-end;gap:8px}
 .actr{display:flex;align-items:center;gap:10px}
@@ -258,11 +252,6 @@ button.gtick:hover{transform:scale(1.15)}
   </div>
 </main>
 
-<dialog id="ssDlg"><div id="ssHd" style="font-size:14px;font-weight:600"></div>
-<p class="small muted" style="margin:6px 0">Open this slate in Sim Savant, copy the page address, and paste it here. Each slate keeps its own link, and it syncs to your other device.</p>
-<input id="ssIn" type="url" inputmode="url" placeholder="https://app.sim-savant.com/nba/dfs/…" style="width:100%">
-<div id="ssErr" class="small warn" style="min-height:18px;margin:4px 0"></div>
-<div class="row" style="justify-content:space-between"><span><a id="ssGo" target="_blank" rel="noopener" class="small">Go to Sim Savant ↗</a> <button id="ssDel" class="small" style="margin-left:6px">Remove link</button></span><span><button id="ssCancel">Cancel</button> <button id="ssSave" class="primary">Save</button></span></div></dialog>
 <dialog id="noteDlg"><div id="noteHd" style="font-size:14px;font-weight:600"></div><div id="noteList"></div><div class="row"><button id="noteDone" class="primary">Done</button></div></dialog>
 <script>
 const TZ = 'America/New_York';
@@ -469,7 +458,7 @@ async function handleFiles(files){
     if(slates[s.key]){ // merge contests from repeat uploads
       const old = slates[s.key]; const byId = Object.fromEntries(old.contests.map(c=>[c.id,c]));
       for(const c of s.contests) byId[c.id]=c; s.contests = Object.values(byId);
-      if(old.done) s.done = old.done; if(old.notes) s.notes = old.notes; if(old.ss) s.ss = old.ss; // keep marks, notes and Sim Savant link
+      if(old.done) s.done = old.done; if(old.notes) s.notes = old.notes; // keep marks and notes
     }
     slates[s.key] = s;
     rememberContests(s);
@@ -553,41 +542,6 @@ document.addEventListener('click', ev=>{
 const kindLabel = e => e.kind=='first' ? 'First Lock' : 'Late Swap';
 
 // ---------- render ----------
-// ---------- Sim Savant link per slate ----------
-// Sim Savant slate pages use a random id (…/nba/dfs/<uuid>), so the link can't be worked out; you paste it once per slate.
-const ssHome = s => `https://app.sim-savant.com/${encodeURIComponent((s.sport||'').toLowerCase())}/dfs`;
-const ssOk = u => { try{ const x = new URL(u); return x.protocol=='https:' && /(^|\.)sim-savant\.com$/.test(x.hostname); }catch(e){ return false; } };
-const ssBtn = s => s.ss?.url
-  ? `<a class="ssb on" href="${esc(s.ss.url)}" target="_blank" rel="noopener" data-ss="${encodeURIComponent(s.key)}" title="Open in Sim Savant (hold or right-click to change the link)">SS ↗</a>`
-  : `<button class="ssb" data-ss="${encodeURIComponent(s.key)}" title="Add this slate's Sim Savant link">+ SS</button>`;
-let ssKey = null;
-function openSS(key){
-  const s = slates[key]; if(!s) return; ssKey = key; noteEditing = key;
-  document.getElementById('ssHd').innerHTML = `<span class="pill ${s.site}">${s.site}</span> ${esc(s.sport)} ${esc(s.type)} <span class="muted">${esc(slateDetail(s))}</span>`;
-  const inp = document.getElementById('ssIn'); inp.value = s.ss?.url || ''; document.getElementById('ssErr').textContent='';
-  document.getElementById('ssGo').href = ssHome(s); document.getElementById('ssDel').hidden = !s.ss?.url;
-  const d = document.getElementById('ssDlg'); d.showModal ? d.showModal() : d.setAttribute('open',''); inp.focus();
-}
-function closeSS(){ const d=document.getElementById('ssDlg'); d.close ? d.close() : d.removeAttribute('open'); }
-document.getElementById('ssDlg').addEventListener('close', ()=>{ ssKey=null; noteEditing=null; render(); });
-document.getElementById('ssCancel').onclick = closeSS;
-document.getElementById('ssDlg').addEventListener('click', e=>{ if(e.target.id=='ssDlg') closeSS(); });
-function setSS(url){ const s = slates[ssKey]; if(!s) return; s.ss = {url, at:Date.now()}; save(); changed(); closeSS(); }
-document.getElementById('ssSave').onclick = ()=>{
-  const u = document.getElementById('ssIn').value.trim();
-  if(!u){ setSS(''); return; }
-  if(!ssOk(u)){ document.getElementById('ssErr').textContent = 'That doesn\'t look like a Sim Savant link (it should start with https://app.sim-savant.com/).'; return; }
-  setSS(u);
-};
-document.getElementById('ssIn').addEventListener('keydown', e=>{ if(e.key=='Enter') document.getElementById('ssSave').click(); });
-document.getElementById('ssDel').onclick = ()=>setSS('');
-document.addEventListener('click', e=>{ const b = e.target.closest('button.ssb'); if(b){ e.stopPropagation(); openSS(decodeURIComponent(b.dataset.ss)); } }, true);
-document.addEventListener('contextmenu', e=>{ const a = e.target.closest('a.ssb'); if(!a) return; e.preventDefault(); openSS(decodeURIComponent(a.dataset.ss)); });
-let ssLp = null, ssLpFired = false;
-document.addEventListener('pointerdown', e=>{ const a = e.target.closest('a.ssb'); if(!a) return; ssLpFired=false; clearTimeout(ssLp); ssLp = setTimeout(()=>{ ssLpFired=true; openSS(decodeURIComponent(a.dataset.ss)); }, 550); });
-for(const ev of ['pointerup','pointercancel','pointerleave']) document.addEventListener(ev, ()=>clearTimeout(ssLp));
-document.addEventListener('click', e=>{ if(ssLpFired && e.target.closest('a.ssb')){ e.preventDefault(); ssLpFired=false; } }, true);
-
 // ---------- lock notes (one per slate per lock time) ----------
 let noteEditing = null, noteTimer = null, dlgKey = null;
 const esc = x => String(x).replace(/[<&"]/g,c=>({'<':'&lt;','&':'&amp;','"':'&quot;'})[c]);
@@ -596,7 +550,9 @@ const noteOf = (s,t) => s.notes?.[t]?.text || '';
 const noteBtn = (s,t) => { const n = noteOf(s,t);
   return `<button class="nbtn ${n?'has':''}" data-note="${encodeURIComponent(s.key)}" data-t="${t}" title="${n ? esc(n) : 'Add a note for this lock'}" aria-label="${n?'Edit note':'Add note'}">${NOTE_SVG}</button>`; };
 const noteLine = (s,t) => { const n = noteOf(s,t); return n ? `<div class="nline" data-note="${encodeURIComponent(s.key)}" data-t="${t}">${NOTE_SVG}<span>${esc(n.replace(/\n+/g,' · '))}</span></div>` : ''; };
-function migrateNotes(){ let m=false; // older version kept one note per slate: move it onto the slate's next lock
+function migrateNotes(){ let m=false;
+  for(const s of Object.values(slates)) if(s.ss){ delete s.ss; m=true; } // Sim Savant links were removed
+  // older version kept one note per slate: move it onto the slate's next lock
   for(const s of Object.values(slates)){ if(!s.note) continue;
     if(s.note.text){ const ev = slateEvents(s); const e = ev.find(e=>e.t>Date.now()) || ev[ev.length-1];
       if(e){ s.notes ||= {}; if(!s.notes[e.t]) s.notes[e.t] = {text:s.note.text, at:s.note.at||Date.now()}; } }
@@ -653,7 +609,7 @@ function render(){
       ? (isNeeded(s,next.t) ? `<span class="act need">Swap needed ${when(next.t)}</span>` : `<span class="act ${next.kind}">${kindLabel(next)} ${when(next.t)}</span>`) + ` <span class="cd">${inStr(next.t-now)}</span>` + (needed.length && !isNeeded(s,next.t) ? ` <span class="needtag">swap needed later</span>` : '')
       : anyFuture ? `<span class="okdone">✓ Lineups done</span>` + (single ? ` <span class="muted">· ${kindLabel(ev[ev.length-1])} ${when(ev[ev.length-1].t)}</span>` : '')
       : `<span class="muted">All games started</span>`;
-    d.innerHTML = `<div class="slate-h"><div class="sh-title"><span class="pill ${s.site}">${s.site}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <strong>${slateDetail(s)}</strong></div><span class="sh-r">${ssBtn(s)}<button class="x" title="Remove slate" aria-label="Remove slate"><svg viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></span></div>
+    d.innerHTML = `<div class="slate-h"><div class="sh-title"><span class="pill ${s.site}">${s.site}</span> <strong>${s.sport}</strong> <span class="pill type">${s.type}</span> <strong>${slateDetail(s)}</strong></div><span class="sh-r"><button class="x" title="Remove slate" aria-label="Remove slate"><svg viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></span></div>
       <div class="actbar"><div>${action}</div><div class="actr">${single ? `<span class="ctl">${noteBtn(s, ev[0].t)}${doneBtn(s, ev[0].t)}</span>` : ''}</div></div>${single ? noteLine(s, ev[0].t) : ''}`;
     const t = document.createElement('table'); t.className='sched';
     t.innerHTML = '<colgroup><col class="c1"><col><col class="c3"><col class="c4"></colgroup>';
@@ -744,7 +700,7 @@ function renderDay(){
     const glow = upNext && es.some(e=>e.t==upNext && (e.kind=='first' ? !isDone(s,e.t) : isNeeded(s,e.t)));
     const lo = startedBefore ? 0 : pct(es[0].t), hi = goesOn ? 100 : pct(es[es.length-1].t);
     const ticks = es.map(e=>`<button class="gtick ${e.kind=='first'?'first':''} ${e.t<now?'past':''} ${isDone(e.slate,e.t)?'tdone':''} ${isNeeded(e.slate,e.t)?'tneed':''}" data-key="${encodeURIComponent(e.slate.key)}" data-t="${e.t}" style="left:${pct(e.t)}%" title="${fmtTime(e.t)} ${kindLabel(e)}: ${e.games.join(', ')}. ${markTitle(e.slate,e.t)}. Hold (or right-click) for a note${noteOf(e.slate,e.t)?': '+esc(noteOf(e.slate,e.t)):''}">${isDone(e.slate,e.t)?'✓':isNeeded(e.slate,e.t)?'!':''}</button>${noteOf(e.slate,e.t) ? `<button class="gnote" data-note="${encodeURIComponent(e.slate.key)}" data-t="${e.t}" style="left:${pct(e.t)}%" title="${esc(noteOf(e.slate,e.t))}">${NOTE_SVG}</button>` : ''}<span class="gtime" style="left:${Math.min(95,Math.max(5,pct(e.t)))}%">${fmtTime(e.t).replace(':00','').replace(' ','').toLowerCase()}</span>`).join('');
-    return `<div class="grow"><div class="glabel ${glow?'glow':''}" title="${s.site} ${s.sport} ${s.type} · ${slateDetail(s)}"><span class="gtxt"><span class="pill ${s.site}">${s.site}</span> ${s.sport} ${s.type} <span class="muted">${slateDetail(s)}</span></span>${ssBtn(s)}</div>
+    return `<div class="grow"><div class="glabel ${glow?'glow':''}" title="${s.site} ${s.sport} ${s.type} · ${slateDetail(s)}"><span class="gtxt"><span class="pill ${s.site}">${s.site}</span> ${s.sport} ${s.type} <span class="muted">${slateDetail(s)}</span></span></div>
       <div class="gtrack">${grid}${nowLine}<div class="gbar ${s.site} ${startedBefore?'cont':''} ${goesOn?'more':''}" style="left:${lo}%;width:${Math.max(hi-lo,0.8)}%"></div>${ticks}</div></div>`;
   }).join('');
   const dayLabel = (dayKey==todayKey()?'Today, ':(dayKey==etDateKey(now+864e5)?'Tomorrow, ':'')) + fmtDay(hourMs(12));
@@ -785,7 +741,7 @@ async function unpack(b64){
 function slimSlates(){
   return Object.values(slates).map(x=>({key:x.key, site:x.site, sport:x.sport, type:x.type, date:x.date, slateId:x.slateId, addedAt:x.addedAt,
     games:x.games.map(g=>({label:g.label, away:g.away, home:g.home, ms:g.ms, src:g.src, started:g.started, teams:g.teams})),
-    contests:x.contests.map(c=>({name:(c.name||'').slice(0,60), fee:c.fee, entries:c.entries})), done:x.done, notes:x.notes, ss:x.ss}));
+    contests:x.contests.map(c=>({name:(c.name||'').slice(0,60), fee:c.fee, entries:c.entries})), done:x.done, notes:x.notes}));
 }
 function syncStatus(msg, bad){ const el=document.getElementById('syncStatus');
   // today's locks (one per slate per lock time), and how many of those are marked done
@@ -830,7 +786,7 @@ function changed(){ LS.set('changedAt', Date.now()); pushSync(); }
 // merge done marks from other devices: for each lock, the most recent tick/untick wins
 function mergeDone(list){
   let changedLocal=false, remoteBehind=false;
-  const remote = {}, notes = {}, sss = {}; for(const x of list){ remote[x.key]=x.done||{}; notes[x.key]=x.notes||{}; if(x.ss) sss[x.key]=x.ss; }
+  const remote = {}, notes = {}; for(const x of list){ remote[x.key]=x.done||{}; notes[x.key]=x.notes||{}; }
   for(const sl of Object.values(slates)){
     // lock notes: for each lock, the newest edit wins
     if(remote[sl.key]){ const rn = notes[sl.key], ln = sl.notes || {};
@@ -839,9 +795,6 @@ function mergeDone(list){
         if(b > a){ if(noteEditing!==sl.key){ (sl.notes ||= {})[t] = rn[t]; changedLocal = true; } }
         else if(a > b) remoteBehind = true;
       } }
-    // Sim Savant link: newest wins
-    if(remote[sl.key]){ const a = sl.ss?.at||0, b = sss[sl.key]?.at||0;
-      if(b > a){ if(ssKey!==sl.key){ sl.ss = sss[sl.key]; changedLocal = true; } } else if(a > b) remoteBehind = true; }
     const r = remote[sl.key]; if(!r) continue;
     sl.done ||= {};
     for(const t of new Set([...Object.keys(r), ...Object.keys(sl.done)])){
