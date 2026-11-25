@@ -728,7 +728,7 @@ async function unpack(b64){
 function slimSlates(){
   return Object.values(slates).map(x=>({key:x.key, site:x.site, sport:x.sport, type:x.type, date:x.date, slateId:x.slateId, addedAt:x.addedAt,
     games:x.games.map(g=>({label:g.label, away:g.away, home:g.home, ms:g.ms, src:g.src, started:g.started, teams:g.teams})),
-    contests:x.contests.map(c=>({name:c.name, fee:c.fee, entries:c.entries})), done:x.done, notes:x.notes}));
+    contests:x.contests.map(c=>({name:(c.name||'').slice(0,60), fee:c.fee, entries:c.entries})), done:x.done, notes:x.notes}));
 }
 function syncStatus(msg, bad){ const el=document.getElementById('syncStatus');
   // today's locks (one per slate per lock time), and how many of those are marked done
@@ -737,19 +737,35 @@ function syncStatus(msg, bad){ const el=document.getElementById('syncStatus');
   const topic = (document.getElementById('topic').value||'').trim();
   el.textContent='Sync: '+msg+(topic?` · topic "${topic}" · ${locks} lock${locks==1?'':'s'} today, ${marks} ✓`:''); el.classList.toggle('warn', !!bad); }
 const nowStr = () => fmtTime(Date.now());
-async function pushSync(){
+// ntfy.sh limits how many messages each visitor may send (and alerts count too), so changes
+// are batched: a share goes out 15 s after the last change (or right away when the page is hidden),
+// identical data isn't re-sent, and a "429 too many requests" backs off and retries later.
+let pushTimer = null, pushBackoff = 0, pushRetryAt = 0;
+function pushSync(now){
+  clearTimeout(pushTimer);
+  const wait = Math.max(now ? 0 : 15e3, pushRetryAt - Date.now());
+  pushTimer = setTimeout(doPushSync, wait);
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden && pushTimer && Date.now() >= pushRetryAt){ clearTimeout(pushTimer); pushTimer=null; doPushSync(); } });
+async function doPushSync(){
+  pushTimer = null;
   const t = syncTopic(); if(!t) return;
   if(!LS.get('changedAt',0)) LS.set('changedAt', Date.now());
   try{
     const body = await pack({v:1, at:LS.get('changedAt',0), slates:slimSlates(), sent:sentForSync()});
     // ntfy.sh turns messages over 4 KB into file attachments that expire after a few hours,
     // so bigger data goes out as several normal messages that the other device puts back together.
+    const sig = t + '|' + hkey(body);
+    if(sig === LS.get('pushedSig','') && Date.now()-LS.get('pushedAt',0) < 6*3600e3){ syncStatus(`up to date (${nowStr()}).`); return; }
     const parts = []; const CH = 3800;
     if(body.length <= CH) parts.push(body);
     else { const id = Math.random().toString(36).slice(2,8), n = Math.ceil(body.length/CH);
       for(let i=0;i<n;i++) parts.push(`~${id}.${i}.${n}.` + body.slice(i*CH,(i+1)*CH)); }
-    let r; for(const part of parts){ r = await fetch(`https://ntfy.sh/${encodeURIComponent(t)}?priority=1`, {method:'POST', body:part}); if(!r.ok) break; }
-    if(r.ok){ LS.set('pushedAt', Date.now()); { const n=Object.keys(slates).length; syncStatus(`shared ${n} slate${n==1?"":"s"} at ${nowStr()}.`); }; }
+    let r; for(const [i,part] of parts.entries()){ if(i) await new Promise(res=>setTimeout(res,1500));
+      r = await fetch(`https://ntfy.sh/${encodeURIComponent(t)}?priority=1`, {method:'POST', body:part}); if(!r.ok) break; }
+    if(r.status==429){ pushBackoff = Math.min(pushBackoff ? pushBackoff*2 : 60e3, 30*60e3); pushRetryAt = Date.now()+pushBackoff; pushSync();
+      syncStatus(`ntfy is limiting messages right now; will share again at ${fmtTime(pushRetryAt)}.`, true); return; }
+    if(r.ok){ pushBackoff = 0; pushRetryAt = 0; LS.set('pushedAt', Date.now()); LS.set('pushedSig', sig); { const n=Object.keys(slates).length; syncStatus(`shared ${n} slate${n==1?"":"s"} at ${nowStr()}.`); }; }
     else syncStatus(`sharing failed (ntfy ${r.status}).`, true);
   }catch(e){ syncStatus('sharing failed: '+e.message, true); }
 }
@@ -794,7 +810,7 @@ async function applyRemote(payloads, force){
   const m = {changedLocal:false, remoteBehind:false};
   for(const d of payloads){ const r = mergeDone(d.slates||[]); m.changedLocal ||= r.changedLocal; if(d===best) m.remoteBehind ||= r.remoteBehind; }
   if(m.changedLocal){ save(); render(); syncStatus(`updated checkmarks from your other device at ${nowStr()}.`); }
-  if(haveLocal && (m.remoteBehind || local > (best?.at||0) || force || Date.now()-LS.get('pushedAt',0) > 6*3600e3) && local >= (best?.at||0)) await pushSync();
+  if(haveLocal && (m.remoteBehind || local > (best?.at||0) || force || Date.now()-LS.get('pushedAt',0) > 6*3600e3) && local >= (best?.at||0)) await pushSync(force);
   else if(!m.changedLocal) syncStatus(best || haveLocal ? `up to date (checked ${nowStr()}).` : `nothing shared yet. Open the page on the device that has your slates.`);
 }
 // ntfy turns messages over 4 KB into a file attachment; read that instead
