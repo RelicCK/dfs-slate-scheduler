@@ -414,13 +414,13 @@ function allEvents(){ return Object.values(slates).flatMap(slateEvents).sort((a,
 const kindRank = e => e.kind=='first' ? 0 : 1;
 const bySportKind = (a,b) => a.slate.sport.localeCompare(b.slate.sport) || kindRank(a)-kindRank(b) || a.slate.site.localeCompare(b.slate.site);
 // lineups-done marks live on the slate (s.done[lockTime]) so they sync with it
-const isDone = (s,t) => !!(s.done && s.done[t]);
+const isDone = (s,t) => !!(s.done && s.done[t] > 0); // >0 done at that time, <0 undone at that time (so undo syncs too)
 const doneBtn = (s,t,wide) => `<button class="chk ${isDone(s,t)?'on':''} ${wide?'wide':''}" data-key="${encodeURIComponent(s.key)}" data-t="${t}" title="${isDone(s,t)?'Undo: mark lineups not done':'Mark lineups done'}">${isDone(s,t)?'✓'+(wide?' Done · undo':''):(wide?'Mark done':'')}</button>`;
 document.addEventListener('click', ev=>{
   const b = ev.target.closest('button.chk, button.gtick'); if(!b) return;
   const s = slates[decodeURIComponent(b.dataset.key)]; if(!s) return;
   s.done ||= {}; const t = b.dataset.t;
-  if(s.done[t]) delete s.done[t]; else s.done[t] = Date.now();
+  s.done[t] = isDone(s,t) ? -Date.now() : Date.now();
   save(); render(); changed();
 });
 const kindLabel = e => e.kind=='first' ? 'First Lock' : 'Late Swap';
@@ -590,23 +590,62 @@ async function pushSync(){
   }catch(e){ syncStatus('sharing failed: '+e.message, true); }
 }
 function changed(){ LS.set('changedAt', Date.now()); pushSync(); }
+// merge done marks from other devices: for each lock, the most recent tick/untick wins
+function mergeDone(list){
+  let changedLocal=false, remoteBehind=false;
+  const remote = {}; for(const x of list) remote[x.key]=x.done||{};
+  for(const sl of Object.values(slates)){
+    const r = remote[sl.key]; if(!r) continue;
+    sl.done ||= {};
+    for(const t of new Set([...Object.keys(r), ...Object.keys(sl.done)])){
+      const a = sl.done[t]||0, b = r[t]||0;
+      if(Math.abs(b) > Math.abs(a)){ sl.done[t]=b; changedLocal=true; }
+      else if(Math.abs(a) > Math.abs(b)) remoteBehind=true;
+    }
+  }
+  return {changedLocal, remoteBehind};
+}
+async function applyRemote(payloads, force){
+  let best=null; const sent = sentMap();
+  for(const d of payloads){ if(d.v==1 && (!best || d.at>best.at)) best=d; if(d.sent) Object.assign(sent, d.sent); }
+  LS.set('sent2', sent);
+  const local = LS.get('changedAt',0), haveLocal = Object.keys(slates).length>0;
+  if(best && (best.at > local || (!haveLocal && best.slates.length))){
+    const mine = Object.values(slates);
+    slates = Object.fromEntries(best.slates.map(x=>[x.key,x])); LS.set('changedAt', best.at);
+    const m = mergeDone(mine); for(const d of payloads) mergeDone(d.slates||[]); // keep the newest tick/untick from anywhere
+    save(); render(); syncStatus(`got ${best.slates.length} slate${best.slates.length==1?'':'s'} from your other device at ${nowStr()}.`);
+    if(m.remoteBehind) await pushSync();
+    if(LS.get('autoSchedule', false)) scheduleAlerts(true);
+    return;
+  }
+  const m = {changedLocal:false, remoteBehind:false};
+  for(const d of payloads){ const r = mergeDone(d.slates||[]); m.changedLocal ||= r.changedLocal; if(d===best) m.remoteBehind ||= r.remoteBehind; }
+  if(m.changedLocal){ save(); render(); syncStatus(`updated checkmarks from your other device at ${nowStr()}.`); }
+  if(haveLocal && (m.remoteBehind || local > (best?.at||0) || force || Date.now()-LS.get('pushedAt',0) > 6*3600e3) && local >= (best?.at||0)) await pushSync();
+  else if(!m.changedLocal) syncStatus(best || haveLocal ? `up to date (checked ${nowStr()}).` : `nothing shared yet. Open the page on the device that has your slates.`);
+}
 async function pullSync(force){
   const t = syncTopic(); if(!t){ syncStatus('enter your ntfy topic to share slates between devices.'); return; }
   try{
     const txt = await (await fetch(`https://ntfy.sh/${encodeURIComponent(t)}/json?poll=1&since=24h`)).text();
     const msgs = txt.split('\n').filter(Boolean).map(l=>JSON.parse(l)).filter(m=>m.event=='message' && m.message);
-    let best=null;
-    const sent = sentMap();
-    for(const m of msgs){ try{ const d=await unpack(m.message); if(d.v==1 && (!best || d.at>best.at)) best=d; if(d.sent) Object.assign(sent, d.sent); }catch(e){} }
-    LS.set('sent2', sent);
-    const local = LS.get('changedAt',0), haveLocal = Object.keys(slates).length>0;
-    if(best && (best.at > local || (!haveLocal && best.slates.length))){
-      slates = Object.fromEntries(best.slates.map(x=>[x.key,x])); LS.set('changedAt', best.at);
-      save(); render(); syncStatus(`got ${best.slates.length} slate${best.slates.length==1?'':'s'} from your other device at ${nowStr()}.`);
-      if(LS.get('autoSchedule', false)) scheduleAlerts(true);
-    } else if(haveLocal && (force || Date.now()-LS.get('pushedAt',0) > 6*3600e3) && local >= (best?.at||0)) await pushSync();
-    else syncStatus(best ? `up to date (checked ${nowStr()}).` : (haveLocal ? `up to date (checked ${nowStr()}).` : `nothing shared yet. Open the page on the device that has your slates.`));
+    const payloads = []; for(const m of msgs){ try{ payloads.push(await unpack(m.message)); }catch(e){} }
+    await applyRemote(payloads, force);
+    liveSync();
   }catch(e){ syncStatus('check failed: '+e.message, true); }
+}
+// live updates while the page is open: changes from your other device show up within seconds
+let syncES = null, syncESTopic = '';
+function liveSync(){
+  const t = syncTopic();
+  if(!t || !('EventSource' in window)) return;
+  if(syncES && syncESTopic==t) return;
+  if(syncES) syncES.close();
+  syncESTopic = t; syncES = new EventSource(`https://ntfy.sh/${encodeURIComponent(t)}/sse`);
+  syncES.onmessage = async ev => {
+    try{ const m = JSON.parse(ev.data); if(m.event && m.event!='message') return; await applyRemote([await unpack(m.message)]); }catch(e){}
+  };
 }
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) pullSync(); });
 
