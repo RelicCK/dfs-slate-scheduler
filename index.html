@@ -126,15 +126,20 @@ button.gtick:hover{transform:scale(1.15)}
   #timelineCard{display:flex;flex-direction:column;height:calc(100vh - 104px);min-height:420px;max-height:none}
   #timeline,#dayview{flex:1;min-height:0;overflow:auto}
   #dayview:not([hidden]){display:flex;flex-direction:column}
-  #dayview .gantt{flex:1;display:flex;flex-direction:column;min-height:0}
-  .gbody{flex:1;display:flex;flex-direction:column;position:relative}
+  #dayview .gantt{flex:1 0 auto;display:flex;flex-direction:column}
+  .gbody{flex:1 0 auto;display:flex;flex-direction:column;position:relative}
   .gbody .grow{flex:1;min-height:34px}
   .gbody .gtrack{height:100%;min-height:32px}
   .gbody .gtick{top:calc(50% - 13px)}
   .gbody .gbar{top:calc(50% - 8px)}
   .gbody .gtime{top:calc(50% + 6px)}
-  #slates{grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px}
-  .slate{padding:8px 11px;font-size:13.5px}
+  #slates{grid-template-columns:minmax(0,1fr);gap:8px}
+  .slate{padding:7px 11px;font-size:13.5px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:14px;align-items:center}
+  .slate .slate-h{display:contents}
+  .slate .sh-title{grid-column:1;white-space:nowrap}
+  .slate .actbar{grid-column:2;margin:0}
+  .slate .x{grid-column:3;grid-row:1}
+  .slate table.sched, .slate details{grid-column:1 / -1}
   .slate .sh-title{line-height:1.4}
   .slate .pill{font-size:11px;padding:1px 6px}
   .slate .x{padding:0 4px}
