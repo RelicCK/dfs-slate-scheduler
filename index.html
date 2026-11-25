@@ -67,8 +67,8 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px}
 .x{border:none;background:none;color:var(--muted);padding:2px 6px}
 /* wide screens: use the width, two columns, one-line day-view rows */
 @media (min-width:1000px){
-  main{max-width:1500px;padding:16px 24px}
-  .layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;align-items:start}
+  main{max-width:none;padding:14px 24px}
+  .layout{display:grid;grid-template-columns:minmax(560px,42%) minmax(0,1fr);gap:16px;align-items:start}
   #timelineCard{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;margin:0}
   #slates{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
   #slates .card{margin:0}
@@ -121,6 +121,30 @@ tr.isneed td:nth-child(2), .tle.isneed .muted{color:#f5a524;font-weight:600}
 button.gtick{padding:0;cursor:pointer;color:#fff;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:3}
 button.gtick:hover{transform:scale(1.15)}
 @media (max-width:480px){table.sched col.c1{width:92px}table.sched col.c3{width:76px}}
+/* wide screens: left panel fills the window height; compact cards fill the right */
+@media (min-width:1000px){
+  #timelineCard{display:flex;flex-direction:column;height:calc(100vh - 104px);min-height:420px;max-height:none}
+  #timeline,#dayview{flex:1;min-height:0;overflow:auto}
+  #dayview:not([hidden]){display:flex;flex-direction:column}
+  #dayview .gantt{flex:1;display:flex;flex-direction:column;min-height:0}
+  .gbody{flex:1;display:flex;flex-direction:column;position:relative}
+  .gbody .grow{flex:1;min-height:34px}
+  .gbody .gtrack{height:100%;min-height:32px}
+  .gbody .gtick{top:calc(50% - 13px)}
+  .gbody .gbar{top:calc(50% - 8px)}
+  .gbody .gtime{top:calc(50% + 6px)}
+  #slates{grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px}
+  .slate{padding:8px 11px;font-size:13.5px}
+  .slate .sh-title{line-height:1.4}
+  .slate .pill{font-size:11px;padding:1px 6px}
+  .slate .x{padding:0 4px}
+  .actbar{margin-top:3px;font-size:13px}
+  table.sched{margin-top:3px}
+  table.sched td{padding:2px 4px}
+  table.sched col.c1{width:96px}
+  button.chk{width:20px;height:20px;font-size:12px}
+  #slates details{margin-top:2px;font-size:12px}
+}
 </style>
 </head>
 <body>
@@ -555,7 +579,7 @@ function renderDay(){
   }).join('');
   const dayLabel = (dayKey==todayKey()?'Today, ':(dayKey==etDateKey(now+864e5)?'Tomorrow, ':'')) + fmtDay(hourMs(12));
   dv.innerHTML = `<div class="dnav"><button id="dPrev" ${di<=0?'disabled':''}>‹</button><strong>${dayLabel}</strong><button id="dNext" ${di>=days.length-1?'disabled':''}>›</button></div>
-    <div class="gantt"><div class="gaxrow"><div></div><div class="gaxis">${axis}</div></div><div style="position:relative">${body}</div></div>
+    <div class="gantt"><div class="gaxrow"><div></div><div class="gaxis">${axis}</div></div><div class="gbody">${body}</div></div>
     <div class="legend"><span><i style="background:var(--warn)"></i>First Lock</span><span><i style="background:var(--ink)"></i>Late Swap</span><span><i style="background:#f5a524"></i>Swap needed</span><span><i style="background:var(--dk)"></i>Done · tap a dot to mark</span></div>`;
   dv.querySelector('#dPrev').onclick = ()=>{ dayKey = days[di-1]; renderDay(); };
   dv.querySelector('#dNext').onclick = ()=>{ dayKey = days[di+1]; renderDay(); };
