@@ -239,6 +239,7 @@ function distBars(times){ const n = times.length, c = BUCKETS.map(([,lo,hi])=>ti
 const dsCells = d => [int(d.n), f(d.avg), f(d.median,0), f(d.p75,0), f(d.p90,0), f(d.max,0), pc(d.unique), pc(d.le1), pc(d.le4)];
 const DS_HEAD = '<th class="n">Entries</th><th class="n">Avg dupes</th><th class="n">Median</th><th class="n">P75</th><th class="n">P90</th><th class="n">Max</th><th class="n">Unique</th><th class="n">≤1 dupe</th><th class="n">≤4 dupes</th>';
 const VIEWS = {}, BIND = {};
+const bindWinnings = el => el.querySelectorAll('[data-win]').forEach(i=>i.onchange=()=>{ const v = C.num(i.value); if(v===null) delete S.winnings[i.dataset.win]; else S.winnings[i.dataset.win] = v; renderView(); });
 
 VIEWS.overview = () => {
   if(!S.A) return needStd();
@@ -250,35 +251,53 @@ VIEWS.overview = () => {
     [int(A.glist.length),'Distinct builds'],[int(dupG.length),'Duplicated builds'],[int(dupG.reduce((s,g)=>s+g.count,0)),'Entries in duplicated builds'],
     A.pm && [f(A.ceiling),'Contest ceiling','Highest complete projection among lineups actually played'],
     A.pm && [pc(cov/A.glist.length*100),'Builds with full projection', `${int(cov)} of ${int(A.glist.length)}; the rest are left out of projection metrics`]]);
-  // you vs field, side by side. Field figures are per entry (every valid field entry counts once), like yours.
+  // you, your tracked players and the field, side by side. Field figures are per entry (every valid field entry counts once).
   const fd = C.dupeStats(times.map(t=>t-1));
   const gp = A.valid.map(e=>A.groups.get(e.key).proj);
+  const fRank = A.valid.map(e=>C.rankFor(e.points, A.desc)).filter(ok);
   const fBestU = A.glist.filter(g=>g.count===1 && g.proj!==null).reduce((m,g)=>Math.max(m,g.proj), -Infinity);
   const fGap = A.pm ? C.mean(A.valid.map(e=>{ const g=A.groups.get(e.key); if(g.proj===null) return null; const b=A.bestAtOrBelow(g.count); return b ? b.proj-g.proj : null; })) : null;
-  const mB = mine && mine.n ? portfolioBuilds('u:'+me()).builds : [];
-  const mBestU = mB.filter(b=>b.times===1 && b.proj!==null).reduce((m,b)=>Math.max(m,b.proj), -Infinity);
-  const cmp = [ // [label, you, field, decimals, suffix, better: 1 higher / -1 lower / 0 neutral, tip]
-    ['Entries', mine?.n, A.valid.length, 0, '', 0, 'Valid lineups'],
-    ['Unique entries', mine?.dupes.unique, fd.unique, 1, '%', 1, 'Share of entries whose exact lineup nobody else played'],
-    ['≤1 dupe', mine?.dupes.le1, fd.le1, 1, '%', 1],
-    ['≤4 dupes', mine?.dupes.le4, fd.le4, 1, '%', 1],
-    ['Avg dupes', mine?.dupes.avg, fd.avg, 2, '', -1, 'Other entries with the same lineup, averaged over entries'],
-    ['Median dupes', mine?.dupes.median, fd.median, 0, '', -1],
-    ['P90 dupes', mine?.dupes.p90, fd.p90, 0, '', -1],
-    ['Max times played', mine && mine.n ? mine.dupes.max+1 : null, Math.max(0,...times), 0, '×', -1],
-    ['Distinct builds per entry', mine && mine.n ? mine.distinct/mine.n*100 : null, A.glist.length/Math.max(1,A.valid.length)*100, 1, '%', 0, 'Distinct lineups ÷ entries'],
+  const field = {n:A.valid.length, distinct:A.glist.length, dupes:fd, avgProj:C.mean(gp), myMax:A.ceiling, bestU: ok(fBestU)?fBestU:null,
+    avgContestLoss: ok(A.ceiling) && ok(C.mean(gp)) ? A.ceiling-C.mean(gp) : null, avgGap:fGap, avgPoints:C.mean(A.valid.map(e=>e.points)),
+    top1: fRank.length ? fRank.filter(r=>r<=A.top1Cut).length/fRank.length*100 : null, top01: fRank.length ? fRank.filter(r=>r<=A.top01Cut).length/fRank.length*100 : null,
+    roi: A.table && A.fee ? (A.table.pool/(A.fieldSize*A.fee)-1)*100 : null, exact:null};
+  const players = trackedList().map(u=>{ const m = userMetrics(u), all = C.userAllEntries(A,u); if(!m || !m.n) return {u, m:null};
+    const bu = portfolioBuilds('u:'+u).builds.filter(b=>b.times===1 && b.proj!==null).reduce((x,b)=>Math.max(x,b.proj), -Infinity);
+    const w = C.num(S.winnings[C.baseUser(u)]);
+    return {u, m:{...m, bestU: ok(bu)?bu:null, exact: w!==null && A.fee && all.length ? (w/(all.length*A.fee)-1)*100 : null}}; });
+  const you = players[0]?.m;
+  const g = (k, sub) => m => m ? (sub ? m[k]?.[sub] : m[k]) : null;
+  const cmpRows = [ // [label, getter, decimals, suffix, better: 1 higher / -1 lower / 0 neutral, tip]
+    ['Entries', g('n'), 0, '', 0, 'Valid lineups'],
+    ['Distinct builds', g('distinct'), 0, '', 0],
+    ['Distinct builds per entry', m=>m&&m.n ? m.distinct/m.n*100 : null, 1, '%', 0, 'Distinct lineups ÷ entries'],
+    ['Unique entries', g('dupes','unique'), 1, '%', 1, 'Share of entries whose exact lineup nobody else played'],
+    ['≤1 dupe', g('dupes','le1'), 1, '%', 1], ['≤4 dupes', g('dupes','le4'), 1, '%', 1],
+    ['Avg dupes', g('dupes','avg'), 2, '', -1, 'Other entries with the same lineup, averaged over entries'],
+    ['Median dupes', g('dupes','median'), 0, '', -1], ['P75 dupes', g('dupes','p75'), 0, '', -1], ['P90 dupes', g('dupes','p90'), 0, '', -1],
+    ['Max times played', m=>m && ok(m.dupes.max) ? m.dupes.max+1 : null, 0, '×', -1],
     ...(A.pm ? [
-    ['Avg projection', mine?.avgProj, C.mean(gp), 2, '', 1, 'Per entry, fully projected lineups only'],
-    ['Max projection', mine?.myMax, A.ceiling, 2, '', 1, 'Field: the contest ceiling'],
-    ['Best unique projection', ok(mBestU)?mBestU:null, ok(fBestU)?fBestU:null, 2, '', 1, 'Highest projection among lineups played only once'],
-    ['Avg contest loss', mine?.avgContestLoss, ok(A.ceiling)?A.ceiling-C.mean(gp):null, 2, '', -1, 'Contest ceiling − lineup projection'],
-    ['Avg efficiency gap', mine?.avgGap, fGap, 2, '', -1, 'Best field projection played no more often − lineup projection']] : []),
-    ['Avg points', mine?.avgPoints, C.mean(A.valid.map(e=>e.points)), 2, '', 1]];
+    ['Avg projection', g('avgProj'), 2, '', 1, 'Per entry, fully projected lineups only'],
+    ['Max projection', g('myMax'), 2, '', 1, 'Field: the contest ceiling'],
+    ['Best unique projection', g('bestU'), 2, '', 1, 'Highest projection among lineups played only once'],
+    ['Avg contest loss', g('avgContestLoss'), 2, '', -1, 'Contest ceiling − lineup projection'],
+    ['Avg efficiency gap', g('avgGap'), 2, '', -1, 'Best field projection played no more often − lineup projection']] : []),
+    ['Avg points', g('avgPoints'), 2, '', 1],
+    ['Top 1%', g('top1'), 2, '%', 1, 'Share of entries ranked in the top 1% of the field'],
+    ['Top 0.1%', g('top01'), 2, '%', 1],
+    ['Est. realized ROI', g('roi'), 1, '%', 1, 'Modeled payouts (not real winnings). Field: the whole field, i.e. minus the rake'],
+    ['Winnings $', 'win', 2, '', 0, 'Actual winnings from DraftKings, if you have them'],
+    ['Exact ROI', g('exact'), 1, '%', 1, 'From the actual winnings entered above']];
   const v = (x,d,sx) => ok(x) ? (d===0 ? int(x) : x.toFixed(d))+sx : '—';
-  h += `<div class="card"><h3>${esc(me()||'You')} vs the field</h3>${mine && mine.n ? `<div class="tw free" style="max-width:760px"><table><thead><tr><th>Stat</th><th class="n">${esc(me())}</th><th class="n">Field</th><th class="n">Diff</th></tr></thead><tbody>${cmp.map(([l,y,fl,d,sx,dir,tip])=>{ const df = ok(y)&&ok(fl) ? y-fl : null;
+  const others = players.slice(1);
+  const shown = cmpRows;
+  h += `<div class="card"><h3>${esc(me()||'You')} vs tracked players and the field</h3>${you ? `<div class="tw free"><table><thead><tr><th>Stat</th><th class="n">${esc(me())}</th><th class="n">Field</th><th class="n" title="${esc(me())} − field">Diff</th>${others.map(p=>`<th class="n">${esc(p.u)}</th>`).join('')}</tr></thead><tbody>${shown.map(([l,get,d,sx,dir,tip])=>{
+      if(get==='win'){ const inp = p => p.m ? `<input type="number" class="sm" data-win="${esc(C.baseUser(p.u))}" value="${S.winnings[C.baseUser(p.u)]??''}" step="any" min="0" style="width:88px" placeholder="optional">` : '';
+        return `<tr><td title="${esc(tip)}">${l}</td><td class="n">${inp(players[0])}</td><td class="n muted">—</td><td></td>${others.map(p=>`<td class="n">${inp(p)}</td>`).join('')}</tr>`; }
+      const y = get(you), fl = get(field), df = ok(y)&&ok(fl) ? y-fl : null;
       const c = !dir || !ok(df) || Math.abs(df)<1e-9 ? '' : (df*dir>0 ? 'pos' : 'neg');
-      return `<tr><td ${tip?`title="${esc(tip)}"`:''}>${l}</td><td class="n"><b>${v(y,d,sx)}</b></td><td class="n">${v(fl,d,sx)}</td><td class="n ${c}">${dir===0 && l==='Entries' ? '' : ok(df) ? (df>0?'+':'')+(d===0?Math.round(df):df.toFixed(d))+(sx==='%'?' pp':sx) : '—'}</td></tr>`; }).join('')}</tbody></table></div>
-    <div class="note">Field figures count every valid field entry once, the same way yours do. Green means better for you (more unique, higher projection, less given up); red means worse. pp = percentage points.</div>` : `<div class="muted small">${esc(me()||'Your username')} has no entries in this contest.</div>`}</div>`;
+      return `<tr><td ${tip?`title="${esc(tip)}"`:''}>${l}</td><td class="n"><b>${v(y,d,sx)}</b></td><td class="n">${v(fl,d,sx)}</td><td class="n ${c}">${l==='Entries'||l==='Distinct builds' ? '' : ok(df) ? (df>0?'+':'')+(d===0?Math.round(df):df.toFixed(d))+(sx==='%'?' pp':sx) : '—'}</td>${others.map(p=>`<td class="n">${p.m ? v(get(p.m),d,sx) : (l==='Entries' ? 'not entered' : '')}</td>`).join('')}</tr>`; }).join('')}</tbody></table></div>
+    <div class="note">Field figures count every valid field entry once, the same way players' do. Diff is ${esc(me())} − field: green is better for you (more unique, higher projection, less given up), red is worse. pp = percentage points. Est. ROI needs the entry fee; type real winnings to get exact ROI.</div>` : `<div class="muted small">${esc(me()||'Your username')} has no entries in this contest.</div>`}</div>`;
   const rows = [['Field, per entry', C.dupeStats(times.map(t=>t-1))], ['Field, per distinct build', C.dupeStats(A.glist.map(g=>g.count-1))]];
   for(const u of trackedList()){ const m = userMetrics(u); rows.push([u+(u===me()?' (you)':''), m && m.n ? m.dupes : null]); }
   h += `<div class="grid2"><div class="card"><h3>Field: times played</h3>${distBars(times)}<div class="note">Share of valid field entries whose exact lineup was played that many times (including themselves).</div></div>
@@ -571,7 +590,8 @@ VIEWS.compare = () => {
     <div class="note">Usernames match exactly (case-insensitive, after removing the "(8/45)" entry suffix). Dupes = other entries with the same lineup. Avg projection uses the projections file and only fully projected lineups; P90 isn't shown for real players because the projections file doesn't have it.
     Est. realized ROI uses the modeled payout curve; enter actual winnings (from DraftKings) to get exact ROI. Entries without a valid lineup still count as cost.</div></div>`;
 };
-BIND.compare = el => el.querySelectorAll('[data-win]').forEach(i=>i.onchange=()=>{ const v = C.num(i.value); if(v===null) delete S.winnings[i.dataset.win]; else S.winnings[i.dataset.win] = v; renderView(); });
+BIND.compare = bindWinnings;
+BIND.overview = bindWinnings;
 
 // ---------- history ----------
 function contestSummary(){
