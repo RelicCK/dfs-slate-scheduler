@@ -876,7 +876,7 @@ function liveSync(){
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) pullSync(); });
 
 async function ntfy(topic, title, body, atSec, seq){
-  const p = new URLSearchParams({title, tags:'lock', priority:'4'});
+  const p = new URLSearchParams({title, tags:'lock', priority:'5'}); // urgent: time-sensitive on iPhone, breaks through Focus if allowed
   if(atSec) p.set('at', String(atSec));
   const r = await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}${seq?'/'+seq:''}?${p}`, {method:'POST', body});
   if(!r.ok) throw new Error('ntfy '+r.status);
@@ -977,7 +977,7 @@ async function scheduleAlerts(auto){
     }
     lines.push('', work ? `About ${Math.ceil(work)} min of work (${[nF?`${nF} first lock${nF==1?'':'s'}`:'', nS?`${nS} flagged swap${nS==1?'':'s'}`:''].filter(Boolean).join(', ')}) + ${mBuf} min buffer` : `Check for late swaps (${mBuf} min before lock)`);
     const body = lines.join('\n');
-    const sig = hkey(title+'\n'+body+'\n'+Math.round(sendAt/60e3));
+    const sig = hkey('p5\n'+title+'\n'+body+'\n'+Math.round(sendAt/60e3)); // p5: pending alerts get re-sent once at urgent priority
     if(prev && prev.sig===sig) continue;
     const at = sendAt > now + 15e3 ? Math.floor(sendAt/1000) : null;
     try{
