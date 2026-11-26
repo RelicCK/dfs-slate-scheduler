@@ -953,11 +953,12 @@ async function scheduleAlerts(auto){
   for(const [t,all] of Object.entries(byT)){
     const k = topic+'|'+t, prev = sched[k];
     // work at this lock: first locks not yet done, and late swaps you've flagged "swap needed"
-    const todo = all.filter(e=>!isDone(e.slate, e.t)).sort(bySportKind);
-    const flagged = todo.filter(e=>e.kind!='first' && isNeeded(e.slate, e.t));
+    // (late swaps you haven't flagged aren't listed and don't get an alert)
+    const todo = all.filter(e=>e.kind=='first' ? !isDone(e.slate, e.t) : isNeeded(e.slate, e.t)).sort(bySportKind);
+    const flagged = todo.filter(e=>e.kind!='first');
     const nF = todo.filter(e=>e.kind=='first').length, nS = flagged.length;
     const work = nF*mFirst + nS*mSwap, lead = Math.max(1, Math.ceil(work + mBuf));
-    if(!todo.length){ // everything at this lock is done: cancel its alert if it hasn't gone out yet
+    if(!todo.length){ // nothing to do at this lock: cancel its alert if it hasn't gone out yet
       if(canMove && prev && prev.sendAt > now){ try{ await ntfyDelete(topic, seqId(t)); delete sched[k]; cancelled++; }catch(err){ log('Failed to cancel alert: '+err.message); } }
       continue;
     }
@@ -975,7 +976,7 @@ async function scheduleAlerts(auto){
       const need = flagged.includes(e), note = noteOf(e.slate,e.t).split('\n')[0];
       lines.push(`  • ${e.slate.sport} ${e.slate.type} · ${slateDetail(e.slate)}` + (e.slate.games.length>2 ? ` (${e.games.join(', ')})` : '') + ` · ${need ? 'Swap needed' : kindLabel(e)}` + (need && note ? ` — ${note}` : ''));
     }
-    lines.push('', work ? `About ${Math.ceil(work)} min of work (${[nF?`${nF} first lock${nF==1?'':'s'}`:'', nS?`${nS} flagged swap${nS==1?'':'s'}`:''].filter(Boolean).join(', ')}) + ${mBuf} min buffer` : `Check for late swaps (${mBuf} min before lock)`);
+    lines.push('', `About ${Math.ceil(work)} min of work (${[nF?`${nF} first lock${nF==1?'':'s'}`:'', nS?`${nS} flagged swap${nS==1?'':'s'}`:''].filter(Boolean).join(', ')}) + ${mBuf} min buffer`);
     const body = lines.join('\n');
     const sig = hkey('p5\n'+title+'\n'+body+'\n'+Math.round(sendAt/60e3)); // p5: pending alerts get re-sent once at urgent priority
     if(prev && prev.sig===sig) continue;
