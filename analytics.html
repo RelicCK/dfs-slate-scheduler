@@ -122,6 +122,11 @@ details.exp>summary{cursor:pointer;color:var(--muted);font-size:13px}
 .kbd{font-family:ui-monospace,Menlo,monospace;font-size:12px}
 @media (max-width:1100px){.inputs{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.inputs .c1{grid-column:1/-1}.slots{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:700px){.inputs{grid-template-columns:minmax(0,1fr)}.grid2{grid-template-columns:minmax(0,1fr)}.tracked{grid-template-columns:repeat(2,minmax(0,1fr))}.meta{grid-template-columns:repeat(2,minmax(0,1fr))}.tile b{font-size:17px}.bar{grid-template-columns:56px minmax(0,1fr) 96px}main{padding:14px 16px 60px}}
+/* Bankroll tab pulses until today's balances are entered */
+.apptabs a.due{position:relative;animation:duePulse 1.4s ease-in-out infinite}
+.apptabs a.due::after{content:'';position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:var(--warn)}
+@keyframes duePulse{50%{background:color-mix(in srgb,var(--warn) 32%,transparent);color:var(--ink)}}
+@media (prefers-reduced-motion:reduce){.apptabs a.due{animation:none;background:color-mix(in srgb,var(--warn) 22%,transparent)}}
 </style>
 </head>
 <body>
@@ -129,6 +134,10 @@ details.exp>summary{cursor:pointer;color:var(--muted);font-size:13px}
   <header class="hdr">
     <div class="top">
       <nav class="apptabs" aria-label="Pages"><a href="./">Slate Locks</a><a href="analytics.html" class="on" aria-current="page">Dupe Checker</a><a href="bankroll.html">Bankroll</a></nav>
+<script>/* Bankroll tab pulses until today's balances are entered */
+function markBankDue(){ try{ const b = JSON.parse(localStorage.getItem('bankroll')||'{}'), k = new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()), v = b[k], due = !(v && !v.del);
+  document.querySelectorAll('.apptabs a[href="bankroll.html"]').forEach(a=>{ a.classList.toggle('due', due); a.title = due ? "Enter today's bankroll" : ''; }); }catch(e){} }
+markBankDue(); document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) markBankDue(); });</script>
     </div>
     <div class="small muted statusline" id="status">Add a contest standings file, or open History.</div>
   </header>

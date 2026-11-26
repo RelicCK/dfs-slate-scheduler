@@ -203,6 +203,11 @@ button.gtick:hover{transform:scale(1.15)}
   .slate .sh-r{grid-column:3;grid-row:1}
   .slate table.sched, .slate details{grid-column:1 / -1}
 }
+/* Bankroll tab pulses until today's balances are entered */
+.apptabs a.due{position:relative;animation:duePulse 1.4s ease-in-out infinite}
+.apptabs a.due::after{content:'';position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:var(--warn)}
+@keyframes duePulse{50%{background:color-mix(in srgb,var(--warn) 32%,transparent);color:var(--ink)}}
+@media (prefers-reduced-motion:reduce){.apptabs a.due{animation:none;background:color-mix(in srgb,var(--warn) 22%,transparent)}}
 </style>
 </head>
 <body>
@@ -210,6 +215,10 @@ button.gtick:hover{transform:scale(1.15)}
   <header class="hdr">
   <div class="top">
     <nav class="apptabs" aria-label="Pages"><a href="./" class="on" aria-current="page">Slate Locks</a><a href="analytics.html">Dupe Checker</a><a href="bankroll.html">Bankroll</a></nav>
+<script>/* Bankroll tab pulses until today's balances are entered */
+function markBankDue(){ try{ const b = JSON.parse(localStorage.getItem('bankroll')||'{}'), k = new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()), v = b[k], due = !(v && !v.del);
+  document.querySelectorAll('.apptabs a[href="bankroll.html"]').forEach(a=>{ a.classList.toggle('due', due); a.title = due ? "Enter today's bankroll" : ''; }); }catch(e){} }
+markBankDue(); document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) markBankDue(); });</script>
     <div class="row">
       <button class="primary" id="addFiles">+ Add<span class="wide"> files</span></button>
       <button id="gear" title="Settings" aria-label="Settings">⚙</button>

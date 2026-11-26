@@ -71,6 +71,11 @@ td.x button{border:none;background:none;color:var(--muted);padding:2px 6px}
 #tip .r i{width:12px;height:2px;border-radius:1px;display:inline-block}
 #tip .r b{min-width:74px;text-align:right}
 #tip .r span{color:var(--muted)}
+/* Bankroll tab pulses until today's balances are entered */
+.apptabs a.due{position:relative;animation:duePulse 1.4s ease-in-out infinite}
+.apptabs a.due::after{content:'';position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:var(--warn)}
+@keyframes duePulse{50%{background:color-mix(in srgb,var(--warn) 32%,transparent);color:var(--ink)}}
+@media (prefers-reduced-motion:reduce){.apptabs a.due{animation:none;background:color-mix(in srgb,var(--warn) 22%,transparent)}}
 </style>
 </head>
 <body>
@@ -78,6 +83,10 @@ td.x button{border:none;background:none;color:var(--muted);padding:2px 6px}
   <header class="hdr">
     <div class="top">
       <nav class="apptabs" aria-label="Pages"><a href="./">Slate Locks</a><a href="analytics.html">Dupe Checker</a><a href="bankroll.html" class="on" aria-current="page">Bankroll</a></nav>
+<script>/* Bankroll tab pulses until today's balances are entered */
+function markBankDue(){ try{ const b = JSON.parse(localStorage.getItem('bankroll')||'{}'), k = new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()), v = b[k], due = !(v && !v.del);
+  document.querySelectorAll('.apptabs a[href="bankroll.html"]').forEach(a=>{ a.classList.toggle('due', due); a.title = due ? "Enter today's bankroll" : ''; }); }catch(e){} }
+markBankDue(); document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) markBankDue(); });</script>
     </div>
     <div class="small muted statusline" id="status">Enter your balances at the start of the day.</div>
   </header>
@@ -228,7 +237,7 @@ async function pull(){
 let range = LS.get('bankRange', 0);
 const SER = [{k:'tot', name:'Total', col:'var(--ink)'}, {k:'dk', name:'DraftKings', col:'var(--dk)'}, {k:'fd', name:'FanDuel', col:'var(--fd)'}];
 const dayMs = k => { const [y,m,d] = k.split('-').map(Number); return Date.UTC(y,m-1,d); };
-const shortDay = k => new Date(dayMs(k)+12*3600e3).toLocaleDateString('en-US',{timeZone:'UTC',month:'short',day:'numeric'});
+const shortDay = k => k==='start' ? 'Start' : new Date(dayMs(k)+12*3600e3).toLocaleDateString('en-US',{timeZone:'UTC',month:'short',day:'numeric'});
 const money0 = v => (v<0?'−':'') + '$' + Math.abs(Math.round(v)).toLocaleString('en-US');
 function niceTicks(lo, hi, n){
   if(lo===hi){ lo -= 100; hi += 100; }
@@ -238,10 +247,13 @@ function niceTicks(lo, hi, n){
 function drawChart(){
   const card = document.getElementById('chartCard'), box = document.getElementById('chartBox');
   let rows = live();
-  card.hidden = rows.length < 2; if(card.hidden) return;
-  if(range){ const cut = dayMs(todayKey()) - range*86400e3; const r2 = rows.filter(([k])=>dayMs(k)>=cut); if(r2.length>=2) rows = r2; }
+  card.hidden = !rows.length; if(card.hidden) return;
+  const first = rows[0][0];
+  if(range){ const cut = dayMs(todayKey()) - range*86400e3; const r2 = rows.filter(([k])=>dayMs(k)>=cut); if(r2.length) rows = r2; }
   document.querySelectorAll('#range button').forEach(b=>b.classList.toggle('on', +b.dataset.r===range));
   const pts = rows.map(([k,v])=>({k, x:dayMs(k), dk: v.dk==null?null:v.dk-(dep.dk||0), fd: v.fd==null?null:v.fd-(dep.fd||0), tot:(v.dk||0)+(v.fd||0)-depTot()}));
+  // every line starts at $0 the day before your first entry (your deposits), so the chart works from day one
+  if(rows[0][0]===first) pts.unshift({k:'start', x:dayMs(first)-86400e3, dk:0, fd:0, tot:0});
   const W = box.clientWidth || 320, H = W < 500 ? 210 : 260, mL = 58, mR = W < 500 ? 44 : 56, mT = 10, mB = 24;
   const vals = pts.flatMap(p=>SER.map(s=>p[s.k]).filter(v=>v!=null)).concat([0]);
   const ticks = niceTicks(Math.min(...vals), Math.max(...vals), W<500 ? 4 : 5), y0 = ticks[0], y1 = ticks[ticks.length-1];
@@ -274,7 +286,7 @@ function drawChart(){
     cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.setAttribute('visibility','visible');
     hd.innerHTML = SER.filter(s=>q[s.k]!=null).map(s=>`<circle cx="${cx}" cy="${Y(q[s.k])}" r="5" fill="${s.col}" stroke="var(--card)" stroke-width="2"/>`).join('');
     tip.replaceChildren();
-    const d = document.createElement('div'); d.className='d'; d.textContent = dayLabel(q.k); tip.appendChild(d);
+    const d = document.createElement('div'); d.className='d'; d.textContent = q.k==='start' ? 'Start (deposits)' : dayLabel(q.k); tip.appendChild(d);
     for(const s of SER){ if(q[s.k]==null) continue;
       const row = document.createElement('div'); row.className='r';
       const i = document.createElement('i'); i.style.background = s.col;
@@ -290,7 +302,7 @@ function drawChart(){
 }
 document.getElementById('range').addEventListener('click', e=>{ const b = e.target.closest('button'); if(!b) return; range = +b.dataset.r; LS.set('bankRange', range); drawChart(); });
 let rsz; window.addEventListener('resize', ()=>{ clearTimeout(rsz); rsz = setTimeout(drawChart, 150); });
-const _render = render; render = function(){ _render(); drawChart(); };
+const _render = render; render = function(){ _render(); drawChart(); markBankDue(); };
 
 fill(); fillDep(); render(); pull();
 </script>
