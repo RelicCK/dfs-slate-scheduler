@@ -125,8 +125,8 @@ markBankDue(); document.addEventListener('visibilitychange', ()=>{ if(!document.
 
   <section class="card" id="histCard" hidden>
     <h3>History</h3>
-    <div class="tbl"><table><thead><tr><th>Day</th><th>DK</th><th>FD</th><th>Total</th><th>Profit</th><th>Change</th><th>In play</th><th></th></tr></thead><tbody id="hist"></tbody></table></div>
-    <p class="small muted" style="margin:8px 0 0">Profit is the total minus what you've deposited. Change is against the previous day you entered. In play is that day's entry fees from the Slate Locks tab.</p>
+    <div class="tbl"><table><thead><tr><th>Day</th><th>DK</th><th>FD</th><th>Total</th><th>Profit</th><th>Change</th><th>Played</th><th></th></tr></thead><tbody id="hist"></tbody></table></div>
+    <p class="small muted" style="margin:8px 0 0">Profit is the total minus what you've deposited. Change is against the previous day you entered. Played is the entry fees from the Slate Locks tab for the day before (or the days since your last entry), since a morning balance reflects those games.</p>
   </section>
   </div>
 </main>
@@ -152,6 +152,12 @@ document.getElementById('depSave').onclick = ()=>{
 };
 const live = () => Object.entries(bank).filter(([,v])=>!v.del).sort((a,b)=>a[0]<b[0]?-1:1);
 const inPlay = k => (LS.get('inplayByDay', {})[k]) || 0; // saved by the Slate Locks tab
+// A morning balance comes after the previous day's games, so it reflects what was in play on the day(s)
+// since the previous entry: from that entry's day up to yesterday (just yesterday when there's no earlier entry).
+const keyOf = ms => new Date(ms).toISOString().slice(0,10);
+const dayMsK = k => { const [y,m,d] = k.split('-').map(Number); return Date.UTC(y,m-1,d); };
+const playedBefore = (k, prevK) => { let n = 0; const end = dayMsK(k), start = prevK ? dayMsK(prevK) : end - 86400e3;
+  for(let t = start; t < end; t += 86400e3) n += inPlay(keyOf(t)); return n; };
 
 const dayIn = document.getElementById('day'), dkIn = document.getElementById('dk'), fdIn = document.getElementById('fd');
 function fill(){ const v = bank[dayIn.value]; dkIn.value = v && !v.del && v.dk!=null ? v.dk : ''; fdIn.value = v && !v.del && v.fd!=null ? v.fd : ''; }
@@ -182,17 +188,18 @@ function render(){
   const [lk, lv] = rows[rows.length-1], prev = rows.length>1 ? rows[rows.length-2][1] : null;
   document.getElementById('sumTitle').textContent = lk==todayKey() ? 'Today' : `Latest: ${dayLabel(lk)}`;
   const ch = (a,b) => b==null || a==null ? '' : `<span class="${cls(a-b)}">${signed(a-b)}${b ? ` (${((a-b)/b*100).toFixed(1)}%)` : ''}</span> vs ${dayLabel(rows[rows.length-2][0]).replace(' (today)','')}`;
-  const ip = inPlay(lk);
+  const ip = playedBefore(lk, rows.length>1 ? rows[rows.length-2][0] : null), dTot = prev ? tot(lv)-tot(prev) : null;
   const pl = (bal, d) => bal==null || !d ? '' : `<div><span class="${cls(bal-d)}">${signed(bal-d)}</span> <span class="muted">vs ${fmt0(d)} deposited</span></div>`;
   const tile = (lbl,val,sub) => `<div class="tile"><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="sub">${sub||'&nbsp;'}</div></div>`;
   document.getElementById('tiles').innerHTML =
     tile('Total bankroll', fmt(tot(lv)), pl(tot(lv), depTot()) + (prev ? ch(tot(lv), tot(prev)) : '')) +
     tile('<span class="pill DK">DK</span> DraftKings', lv.dk==null?'—':fmt(lv.dk), pl(lv.dk, dep.dk) + (prev && lv.dk!=null && prev.dk!=null ? ch(lv.dk, prev.dk) : '')) +
     tile('<span class="pill FD">FD</span> FanDuel', lv.fd==null?'—':fmt(lv.fd), pl(lv.fd, dep.fd) + (prev && lv.fd!=null && prev.fd!=null ? ch(lv.fd, prev.fd) : '')) +
-    tile('In play that day', ip ? fmt0(ip) : '—', ip && tot(lv) ? `<span class="muted">${(ip/tot(lv)*100).toFixed(1)}% of bankroll</span>` : '<span class="muted">from Slate Locks</span>');
+    tile(rows.length>1 && dayMsK(lk)-dayMsK(rows[rows.length-2][0]) > 86400e3 ? 'Played since last entry' : 'Played yesterday', ip ? fmt0(ip) : '—',
+      ip && dTot!=null ? `<span class="${cls(dTot)}">${signed(dTot)}</span> <span class="muted">result, ${(dTot/ip*100).toFixed(0)}% ROI</span>` : '<span class="muted">entry fees from Slate Locks</span>');
   // history, newest first
   document.getElementById('hist').innerHTML = rows.map(([k,v],i)=>{
-    const p = i ? rows[i-1][1] : null, d = p ? tot(v)-tot(p) : null, ipk = inPlay(k);
+    const p = i ? rows[i-1][1] : null, d = p ? tot(v)-tot(p) : null, ipk = playedBefore(k, i ? rows[i-1][0] : null);
     return `<tr><td>${dayLabel(k)}</td><td>${v.dk==null?'—':fmt(v.dk)}</td><td>${v.fd==null?'—':fmt(v.fd)}</td><td><b>${fmt(tot(v))}</b></td><td class="${cls(tot(v)-depTot())}">${signed(tot(v)-depTot())}</td><td class="${d==null?'muted':cls(d)}">${d==null?'—':signed(d)}</td><td>${ipk?fmt0(ipk):'—'}</td><td class="x"><button data-del="${k}" title="Remove this day" aria-label="Remove ${dayLabel(k)}">✕</button></td></tr>`;
   }).reverse().join('');
 }
