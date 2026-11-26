@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bankroll</title>
+<style>
+/* same tokens and controls as the Slate Locks page (index.html) */
+:root{--bg:#f6f7f9;--card:#fff;--ink:#16181d;--muted:#667085;--line:#e3e6eb;--accent:#2f6fed;--dk:#53a318;--fd:#1493ff;--warn:#c4320a;--soft:#eef3ff;--good:#2e8540;--bad:#c4320a}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b21;--ink:#e8eaee;--muted:#98a2b3;--line:#2a2f38;--accent:#6f9bff;--soft:#1d2433;--warn:#ff8a65;--good:#6fd08c;--bad:#ff8a65}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:860px;margin:0 auto;padding:14px 16px 60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;min-width:0}
+.hdr{position:sticky;top:0;z-index:20;background:var(--bg);margin:-14px -16px 12px;padding:12px 16px 8px;border-bottom:1px solid var(--line)}
+.top{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+/* app tabs: identical on every page */
+.apptabs{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--card);flex:none}
+.apptabs a{font-size:15px;font-weight:600;padding:5px 12px;border-radius:7px;color:var(--muted);text-decoration:none;white-space:nowrap;line-height:1.3}
+.apptabs a:hover{color:var(--ink)}
+.apptabs a.on{background:var(--accent);color:#fff}
+@media (max-width:420px){.apptabs a{font-size:14px;padding:5px 8px}}
+.statusline{margin:4px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.small{font-size:13px}.muted{color:var(--muted)}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+input{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);min-width:0}
+h3{font-size:15px;margin:0 0 10px}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end}
+.form label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.form label b{color:var(--ink);font-weight:600}
+.money-in{position:relative}
+.money-in input{width:100%;padding-left:22px;font-variant-numeric:tabular-nums}
+.money-in::before{content:'$';position:absolute;left:10px;bottom:8px;color:var(--muted)}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:1px 6px;border-radius:99px;color:#fff;vertical-align:1px}
+.pill.DK{background:var(--dk)}.pill.FD{background:var(--fd)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.tile{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.tile .lbl{font-size:12px;color:var(--muted)}
+.tile .val{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.3}
+.tile .sub{font-size:12.5px;font-variant-numeric:tabular-nums;line-height:1.5}
+.up{color:var(--good)}.down{color:var(--bad)}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{padding:6px 6px;border-top:1px solid var(--line);text-align:right;white-space:nowrap}
+th{font-size:12px;color:var(--muted);font-weight:600;border-top:none}
+th:first-child,td:first-child{text-align:left}
+td.x{width:1%}
+td.x button{border:none;background:none;color:var(--muted);padding:2px 6px}
+.tbl{overflow-x:auto}
+#msg{min-height:18px;margin-top:8px}
+@media (max-width:560px){th:nth-child(2),td:nth-child(2),th:nth-child(3),td:nth-child(3){display:none}.tiles{grid-template-columns:1fr 1fr}.tile .val{font-size:18px}}
+@media (min-width:1000px){main{max-width:none;padding:14px 24px 60px}.hdr{margin:-14px -24px 12px;padding:12px 24px 8px}.wrap{max-width:980px}}
+</style>
+</head>
+<body>
+<main>
+  <header class="hdr">
+    <div class="top">
+      <nav class="apptabs" aria-label="Pages"><a href="./">Slate Locks</a><a href="analytics.html">Dupe Checker</a><a href="bankroll.html" class="on" aria-current="page">Bankroll</a></nav>
+    </div>
+    <div class="small muted statusline" id="status">Enter your balances at the start of the day.</div>
+  </header>
+
+  <div class="wrap">
+  <section class="card">
+    <h3>Start-of-day balances</h3>
+    <div class="form">
+      <label><b>Day</b><input type="date" id="day"></label>
+      <label class="money-in"><b><span class="pill DK">DK</span> DraftKings</b><input type="number" id="dk" inputmode="decimal" min="0" step="0.01" placeholder="0.00"></label>
+      <label class="money-in"><b><span class="pill FD">FD</span> FanDuel</b><input type="number" id="fd" inputmode="decimal" min="0" step="0.01" placeholder="0.00"></label>
+      <button class="primary" id="save">Save</button>
+    </div>
+    <div class="small muted" id="msg"></div>
+    <details id="depBox" style="margin-top:6px"><summary class="small muted" style="cursor:pointer">Total deposited <span id="depSum"></span></summary>
+      <div class="form" style="margin-top:8px">
+        <label class="money-in"><b><span class="pill DK">DK</span> Deposited</b><input type="number" id="depDk" inputmode="decimal" min="0" step="0.01"></label>
+        <label class="money-in"><b><span class="pill FD">FD</span> Deposited</b><input type="number" id="depFd" inputmode="decimal" min="0" step="0.01"></label>
+        <button id="depSave">Save deposits</button>
+      </div>
+      <p class="small muted" style="margin:6px 0 0">Profit and loss are measured against these. Add to them if you deposit more (or subtract withdrawals).</p>
+    </details>
+  </section>
+
+  <section class="card" id="sumCard" hidden>
+    <h3 id="sumTitle">Today</h3>
+    <div class="tiles" id="tiles"></div>
+  </section>
+
+  <section class="card" id="histCard" hidden>
+    <h3>History</h3>
+    <div class="tbl"><table><thead><tr><th>Day</th><th>DK</th><th>FD</th><th>Total</th><th>Profit</th><th>Change</th><th>In play</th><th></th></tr></thead><tbody id="hist"></tbody></table></div>
+    <p class="small muted" style="margin:8px 0 0">Profit is the total minus what you've deposited. Change is against the previous day you entered. In play is that day's entry fees from the Slate Locks tab.</p>
+  </section>
+  </div>
+</main>
+<script>
+const LS = {get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const TZ = 'America/New_York';
+const todayKey = () => new Intl.DateTimeFormat('en-CA',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+const fmt = v => '$' + v.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2});
+const fmt0 = v => '$' + Math.round(v).toLocaleString('en-US');
+const signed = v => (v>0?'+':v<0?'−':'') + fmt(Math.abs(v));
+const cls = v => v>0 ? 'up' : v<0 ? 'down' : 'muted';
+const dayLabel = k => { const [y,m,d] = k.split('-').map(Number); return new Date(Date.UTC(y,m-1,d,12)).toLocaleDateString('en-US',{timeZone:'UTC',weekday:'short',month:'short',day:'numeric'}) + (k==todayKey()?' (today)':''); };
+
+// bank: day -> {dk, fd, at} (or {del:true, at} once removed, so the removal syncs too)
+let bank = LS.get('bankroll', {});
+let dep = LS.get('deposits', {dk:25000, fd:11407, at:1}); // starting deposits; at:1 so any edit on any device wins
+const depTot = () => (dep.dk||0) + (dep.fd||0);
+function fillDep(){ document.getElementById('depDk').value = dep.dk ?? ''; document.getElementById('depFd').value = dep.fd ?? ''; document.getElementById('depSum').textContent = '· ' + fmt0(depTot()); }
+document.getElementById('depSave').onclick = ()=>{
+  const dk = +document.getElementById('depDk').value || 0, fd = +document.getElementById('depFd').value || 0;
+  dep = {dk, fd, at:Date.now()}; LS.set('deposits', dep); fillDep(); render(); pushSoon();
+  document.getElementById('msg').textContent = 'Saved deposits.';
+};
+const live = () => Object.entries(bank).filter(([,v])=>!v.del).sort((a,b)=>a[0]<b[0]?-1:1);
+const inPlay = k => (LS.get('inplayByDay', {})[k]) || 0; // saved by the Slate Locks tab
+
+const dayIn = document.getElementById('day'), dkIn = document.getElementById('dk'), fdIn = document.getElementById('fd');
+function fill(){ const v = bank[dayIn.value]; dkIn.value = v && !v.del && v.dk!=null ? v.dk : ''; fdIn.value = v && !v.del && v.fd!=null ? v.fd : ''; }
+dayIn.value = todayKey(); dayIn.max = todayKey(); dayIn.onchange = fill;
+
+document.getElementById('save').onclick = ()=>{
+  const k = dayIn.value, dk = dkIn.value==='' ? null : +dkIn.value, fd = fdIn.value==='' ? null : +fdIn.value;
+  const msg = document.getElementById('msg');
+  if(!k){ msg.textContent = 'Pick a day.'; return; }
+  if(dk==null && fd==null){ msg.textContent = 'Enter at least one balance.'; return; }
+  if([dk,fd].some(v=>v!=null && (!isFinite(v) || v<0))){ msg.textContent = 'Balances must be numbers of 0 or more.'; return; }
+  bank[k] = {dk, fd, at:Date.now()}; LS.set('bankroll', bank);
+  msg.textContent = `Saved ${dayLabel(k)}.`; render(); pushSoon();
+};
+document.getElementById('hist').addEventListener('click', e=>{
+  const b = e.target.closest('button[data-del]'); if(!b) return;
+  const k = b.dataset.del; if(!bank[k]) return;
+  bank[k] = {del:true, at:Date.now()}; LS.set('bankroll', bank); render(); pushSoon();
+  document.getElementById('msg').textContent = `Removed ${dayLabel(k)}.`;
+});
+
+function render(){
+  const rows = live();
+  document.getElementById('sumCard').hidden = document.getElementById('histCard').hidden = !rows.length;
+  if(!rows.length) return;
+  const tot = v => (v.dk||0) + (v.fd||0);
+  // summary: latest day entered vs the one before it
+  const [lk, lv] = rows[rows.length-1], prev = rows.length>1 ? rows[rows.length-2][1] : null;
+  document.getElementById('sumTitle').textContent = lk==todayKey() ? 'Today' : `Latest: ${dayLabel(lk)}`;
+  const ch = (a,b) => b==null || a==null ? '' : `<span class="${cls(a-b)}">${signed(a-b)}${b ? ` (${((a-b)/b*100).toFixed(1)}%)` : ''}</span> vs ${dayLabel(rows[rows.length-2][0]).replace(' (today)','')}`;
+  const ip = inPlay(lk);
+  const pl = (bal, d) => bal==null || !d ? '' : `<div><span class="${cls(bal-d)}">${signed(bal-d)}</span> <span class="muted">vs ${fmt0(d)} deposited</span></div>`;
+  const tile = (lbl,val,sub) => `<div class="tile"><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="sub">${sub||'&nbsp;'}</div></div>`;
+  document.getElementById('tiles').innerHTML =
+    tile('Total bankroll', fmt(tot(lv)), pl(tot(lv), depTot()) + (prev ? ch(tot(lv), tot(prev)) : '')) +
+    tile('<span class="pill DK">DK</span> DraftKings', lv.dk==null?'—':fmt(lv.dk), pl(lv.dk, dep.dk) + (prev && lv.dk!=null && prev.dk!=null ? ch(lv.dk, prev.dk) : '')) +
+    tile('<span class="pill FD">FD</span> FanDuel', lv.fd==null?'—':fmt(lv.fd), pl(lv.fd, dep.fd) + (prev && lv.fd!=null && prev.fd!=null ? ch(lv.fd, prev.fd) : '')) +
+    tile('In play that day', ip ? fmt0(ip) : '—', ip && tot(lv) ? `<span class="muted">${(ip/tot(lv)*100).toFixed(1)}% of bankroll</span>` : '<span class="muted">from Slate Locks</span>');
+  // history, newest first
+  document.getElementById('hist').innerHTML = rows.map(([k,v],i)=>{
+    const p = i ? rows[i-1][1] : null, d = p ? tot(v)-tot(p) : null, ipk = inPlay(k);
+    return `<tr><td>${dayLabel(k)}</td><td>${v.dk==null?'—':fmt(v.dk)}</td><td>${v.fd==null?'—':fmt(v.fd)}</td><td><b>${fmt(tot(v))}</b></td><td class="${cls(tot(v)-depTot())}">${signed(tot(v)-depTot())}</td><td class="${d==null?'muted':cls(d)}">${d==null?'—':signed(d)}</td><td>${ipk?fmt0(ipk):'—'}</td><td class="x"><button data-del="${k}" title="Remove this day" aria-label="Remove ${dayLabel(k)}">✕</button></td></tr>`;
+  }).reverse().join('');
+}
+
+// ---------- sync with your other devices through ntfy, same topic as Slate Locks ("<topic>-bank") ----------
+// ntfy.sh keeps messages 12 hours, so each device re-posts every 6 hours when opened. Newest edit per day wins.
+const topic = () => (LS.get('topic','')||'').trim();
+const status = t => document.getElementById('status').textContent = t;
+async function pack(obj){ const bytes = await new Response(new Blob([JSON.stringify(obj)]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer(); let bin=''; new Uint8Array(bytes).forEach(b=>bin+=String.fromCharCode(b)); return btoa(bin); }
+async function unpack(b64){ const bin = Uint8Array.from(atob(b64), c=>c.charCodeAt(0)); return JSON.parse(await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text()); }
+let pushTimer = null;
+function pushSoon(){ clearTimeout(pushTimer); pushTimer = setTimeout(push, 3000); }
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden && pushTimer){ clearTimeout(pushTimer); pushTimer=null; push(); } else if(!document.hidden) pull(); });
+async function push(){
+  pushTimer = null; const t = topic(); if(!t) return;
+  const cutoff = new Date(Date.now()-90*86400e3).toISOString().slice(0,10); // last 90 days keeps the message small
+  const recent = Object.fromEntries(Object.entries(bank).filter(([k])=>k>=cutoff));
+  try{
+    const r = await fetch(`https://ntfy.sh/${encodeURIComponent(t+'-bank')}?priority=1`, {method:'POST', body: await pack({v:1, bank:recent, dep})});
+    if(r.ok){ LS.set('bankPushedAt', Date.now()); status(`Synced with your other devices at ${new Date().toLocaleTimeString('en-US',{timeZone:TZ,hour:'numeric',minute:'2-digit'})}.`); }
+    else status(r.status==429 ? 'ntfy is limiting messages right now; will try again later.' : `Sync failed (ntfy ${r.status}).`);
+  }catch(e){ status('Sync failed: '+e.message); }
+}
+async function pull(){
+  const t = topic(); if(!t){ status('Set your ntfy topic on the Slate Locks tab (⚙) to sync this between devices.'); return; }
+  try{
+    const txt = await (await fetch(`https://ntfy.sh/${encodeURIComponent(t+'-bank')}/json?poll=1&since=24h`)).text();
+    let changed=false, behind=false; const seen = {};
+    for(const line of txt.split('\n').filter(Boolean)){
+      let m; try{ m = JSON.parse(line); }catch(e){ continue; } if(m.event!='message' || !m.message) continue;
+      let d; try{ d = await unpack(m.message); }catch(e){ continue; }
+      if(d.dep && (d.dep.at||0) > (dep.at||0)){ dep = d.dep; LS.set('deposits', dep); changed = true; } else if(d.dep && (dep.at||0) > (d.dep.at||0)) behind = true;
+      for(const [k,v] of Object.entries(d.bank||{})){ seen[k] = true; if(!bank[k] || (v.at||0) > (bank[k].at||0)){ bank[k] = v; changed = true; } else if((bank[k].at||0) > (v.at||0)) behind = true; }
+    }
+    for(const k of Object.keys(bank)) if(!seen[k]) behind = true;
+    if(changed){ LS.set('bankroll', bank); render(); fill(); fillDep(); }
+    if((behind && Object.keys(bank).length) || Date.now()-LS.get('bankPushedAt',0) > 6*3600e3 && Object.keys(bank).length) await push();
+    else status(changed ? 'Updated from your other device.' : 'Up to date.');
+  }catch(e){ status('Sync check failed: '+e.message); }
+}
+fill(); fillDep(); render(); pull();
+</script>
+</body>
+</html>

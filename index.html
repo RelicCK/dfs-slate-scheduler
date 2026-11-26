@@ -209,7 +209,7 @@ button.gtick:hover{transform:scale(1.15)}
 <main>
   <header class="hdr">
   <div class="top">
-    <nav class="apptabs" aria-label="Pages"><a href="./" class="on" aria-current="page">Slate Locks</a><a href="analytics.html">Dupe Checker</a></nav>
+    <nav class="apptabs" aria-label="Pages"><a href="./" class="on" aria-current="page">Slate Locks</a><a href="analytics.html">Dupe Checker</a><a href="bankroll.html">Bankroll</a></nav>
     <div class="row">
       <button class="primary" id="addFiles">+ Add<span class="wide"> files</span></button>
       <button id="gear" title="Settings" aria-label="Settings">⚙</button>
@@ -602,6 +602,11 @@ for(const ev of ['pointerup','pointercancel','pointerleave']) document.addEventL
 document.addEventListener('contextmenu', e=>{ const b = e.target.closest('button.gtick'); if(!b) return; e.preventDefault(); clearTimeout(lpTimer); lpFired=true; openNote(decodeURIComponent(b.dataset.key), +b.dataset.t); });
 function render(){
   if(noteEditing) return; // don't redraw under someone typing a note
+  // remember each day's money in play for the Bankroll tab (today and later; past days keep their last value)
+  { const ip = LS.get('inplayByDay', {}), today = todayKey(), days = new Set(Object.values(slates).map(firstDay));
+    for(const d of days) if(d >= today) ip[d] = dayInPlay(d);
+    for(const d of Object.keys(ip)) if(d < new Date(Date.now()-400*86400e3).toISOString().slice(0,10)) delete ip[d];
+    LS.set('inplayByDay', ip); }
   migrateNotes();
   prune();
   const el = document.getElementById('slates'); el.innerHTML='';
