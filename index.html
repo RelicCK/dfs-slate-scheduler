@@ -947,7 +947,7 @@ async function ntfyDelete(topic, seq){
 // Check once a day, on a throwaway topic, that ntfy.sh really replaces and cancels scheduled alerts.
 // If it doesn't, alerts are never re-sent, so a lock can't get two.
 async function checkReplace(topic){
-  const c = LS.get('replaceOk', null); if(c && Date.now()-c.at < 86400e3) return c.ok;
+  const c = LS.get('replaceOk', null); if(c && Date.now()-c.at < (c.ok ? 86400e3 : 3600e3)) return c.ok; // a failed check is retried after an hour
   const pt = `${topic}-probe-${Math.random().toString(36).slice(2,8)}`, base = `https://ntfy.sh/${encodeURIComponent(pt)}`;
   const list = async()=> (await (await fetch(`${base}/json?poll=1&scheduled=1`)).text()).split('\n').filter(Boolean).map(l=>JSON.parse(l)).filter(m=>m.event=='message');
   let ok = false;
@@ -986,7 +986,9 @@ async function scheduleAlerts(auto){
     const nF = todo.filter(e=>e.kind=='first').length, nS = flagged.length;
     const work = nF*mFirst + nS*mSwap, lead = Math.max(1, Math.ceil(work + mBuf));
     if(!todo.length){ // nothing to do at this lock: cancel its alert if it hasn't gone out yet
-      if(canMove && prev && prev.sendAt > now){ try{ await ntfyDelete(topic, seqId(t)); delete sched[k]; cancelled++; }catch(err){ log('Failed to cancel alert: '+err.message); } }
+      // cancel even when this device didn't schedule it (another device may have); remember so it's done once
+      if(canMove && (prev ? !prev.cancelled && prev.sendAt > now : +t - now < MAX_DELAY + 3600e3)){
+        try{ await ntfyDelete(topic, seqId(t)); sched[k] = {cancelled:true, sendAt:+t, at:Date.now()}; if(prev) cancelled++; }catch(err){ log('Failed to cancel alert: '+err.message); } }
       continue;
     }
     // an alert from the older version (no sequence ID) is already queued and can't be changed; never add a second one
