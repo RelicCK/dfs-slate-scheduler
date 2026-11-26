@@ -671,8 +671,8 @@ function renderDay(){
   if(!days.length){ dv.innerHTML='<p class="muted">No locks to show.</p>'; return; }
   if(!days.includes(dayKey)) dayKey = days.includes(todayKey()) ? todayKey() : days[0];
   const di = days.indexOf(dayKey);
-  // finished slates (every lock passed, or every remaining lock checked off) drop off unless you ask to see them
-  const finished = sl => slateEvents(sl).every(e=>e.t<=now || isDone(sl,e.t));
+  // finished slates (last lock time has passed) drop off unless you ask to see them
+  const finished = sl => slateEvents(sl).every(e=>e.t<=now);
   const dayEv = all.filter(e=>etDateKey(e.t)==dayKey);
   const nDone = new Set(dayEv.filter(e=>finished(e.slate)).map(e=>e.slate)).size;
   const shown = showFinished ? dayEv : dayEv.filter(e=>!finished(e.slate));
