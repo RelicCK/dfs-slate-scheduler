@@ -550,6 +550,10 @@ const kindLabel = e => e.kind=='first' ? 'First Lock' : 'Late Swap';
 const feeNum = f => parseFloat(String(f??'').replace(/[^0-9.]/g,'')) || 0;
 const inPlay = s => s.contests.reduce((n,c)=>n + feeNum(c.fee)*(c.entries||0), 0);
 const fmtMoney = v => '$' + (v>=100 || Number.isInteger(v) ? Math.round(v).toLocaleString('en-US') : v.toFixed(2));
+// total in play for a day: slates whose first lock is on that day
+const firstDay = s => { const ms = s.games.map(g=>g.ms).filter(Boolean); return s.games.some(g=>g.started) || !ms.length ? s.date : etDateKey(Math.min(...ms)); };
+const dayInPlay = key => Object.values(slates).filter(s=>firstDay(s)==key).reduce((n,s)=>n+inPlay(s), 0);
+const dayMoney = key => { const v = dayInPlay(key); return v ? ` <span class="money" title="Entry fees in play on slates that first lock this day">${fmtMoney(v)} in play</span>` : ''; };
 const moneyTag = s => { const v = inPlay(s); return v ? `<span class="money" title="Entry fees in play on this slate">${fmtMoney(v)}</span>` : ''; };
 
 // ---------- lock notes (one per slate per lock time) ----------
@@ -658,7 +662,7 @@ function render(){
   const nextT = ev.find(e=>e.t>now)?.t;
   let lastDay = '';
   tl.innerHTML = Object.entries(byT).sort((a,b)=>a[0]-b[0]).map(([t,es])=>{
-    const day = fmtDay(+t); const hdr = day!==lastDay ? `<tr><th colspan="2">${etDateKey(+t)==todayKey()?'Today, ':(etDateKey(+t)==etDateKey(Date.now()+864e5)?'Tomorrow, ':'')}${day}</th></tr>` : ''; lastDay = day;
+    const day = fmtDay(+t); const hdr = day!==lastDay ? `<tr><th colspan="2">${etDateKey(+t)==todayKey()?'Today, ':(etDateKey(+t)==etDateKey(Date.now()+864e5)?'Tomorrow, ':'')}${day}${dayMoney(etDateKey(+t))}</th></tr>` : ''; lastDay = day;
     return hdr + `<tr class="${+t<now?'past':''} ${+t==nextT?'next':''}"><td class="t">${fmtTime(+t)}</td><td>${es.map(e=>`${+t>now?doneBtn(e.slate,e.t):'<span class="chkpad"></span>'} <span class="pill ${e.slate.site}">${e.slate.site}</span> ${e.slate.sport} ${e.slate.type} <span class="muted">${slateDetail(e.slate)}</span> <span style="white-space:nowrap"><span class="tag ${e.kind}">${kindLabel(e)}</span> ${noteBtn(e.slate,e.t)}</span>${noteLine(e.slate,e.t)}`.replace(/^(<button[^]*?<\/button>|<span class="chkpad"><\/span>) /, (m,c)=>`<div class="tle ${isDone(e.slate,e.t)?'isdone':''} ${isNeeded(e.slate,e.t)?'isneed':''}">${c}<span>`)+'</span></div>').join('')}</td></tr>`;
   }).join('');
   try{ renderDay(); }catch(e){ console.error(e); log('Day view error: '+e.message); }
@@ -719,7 +723,7 @@ function renderDay(){
       <div class="gtrack">${grid}${nowLine}<div class="gbar ${s.site} ${startedBefore?'cont':''} ${goesOn?'more':''}" style="left:${lo}%;width:${Math.max(hi-lo,0.8)}%"></div>${ticks}</div></div>`;
   }).join('');
   const dayLabel = (dayKey==todayKey()?'Today, ':(dayKey==etDateKey(now+864e5)?'Tomorrow, ':'')) + fmtDay(hourMs(12));
-  dv.innerHTML = `<div class="dnav"><button id="dPrev" ${di<=0?'disabled':''}>‹</button><strong>${dayLabel}</strong><button id="dNext" ${di>=days.length-1?'disabled':''}>›</button></div>
+  dv.innerHTML = `<div class="dnav"><button id="dPrev" ${di<=0?'disabled':''}>‹</button><strong>${dayLabel}${dayMoney(dayKey)}</strong><button id="dNext" ${di>=days.length-1?'disabled':''}>›</button></div>
     <div class="gantt"><div class="gaxrow"><div></div><div class="gaxis">${axis}</div></div><div class="gbody">${body}</div></div>
     ${nDone ? `<div class="dfin"><button id="dFin" class="small">${showFinished?'Hide':'Show'} ${nDone} finished slate${nDone==1?'':'s'}</button></div>` : ''}
     ${!rows.length ? '<p class="muted small" style="margin:8px 0">Everything on this day is finished.</p>' : ''}
