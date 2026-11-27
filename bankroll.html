@@ -205,39 +205,62 @@ function render(){
 }
 
 // ---------- sync with your other devices through ntfy, same topic as Slate Locks ("<topic>-bank") ----------
-// ntfy.sh keeps messages 12 hours, so each device re-posts every 6 hours when opened. Newest edit per day wins.
+// ntfy.sh drops ordinary messages after 12 hours, so a day saved on one device used to vanish before the
+// other device was opened. Instead the whole bankroll is posted as a *scheduled* message (sequence ID "bank",
+// due ~3 days out). ntfy.sh keeps scheduled messages until they're due and lists them with ?scheduled=1,
+// and each new post replaces the last, so there is always one fresh copy. Any device that opens the page
+// merges it (newest edit per day wins) and posts the merged copy again when it adds something or the copy
+// is getting old, which keeps it alive as long as some device opens the page every few days.
 const topic = () => (LS.get('topic','')||'').trim();
 const status = t => document.getElementById('status').textContent = t;
+const bankUrl = t => `https://ntfy.sh/${encodeURIComponent(t+'-bank')}`;
+const HOLD = 3*86400 - 30*60;   // seconds; ntfy.sh holds scheduled messages for at most 3 days
+const REFRESH = 2*86400e3;      // re-post once the copy on ntfy is due within 2 days
 async function pack(obj){ const bytes = await new Response(new Blob([JSON.stringify(obj)]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer(); let bin=''; new Uint8Array(bytes).forEach(b=>bin+=String.fromCharCode(b)); return btoa(bin); }
 async function unpack(b64){ const bin = Uint8Array.from(atob(b64), c=>c.charCodeAt(0)); return JSON.parse(await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text()); }
 let pushTimer = null;
 function pushSoon(){ clearTimeout(pushTimer); pushTimer = setTimeout(push, 3000); }
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden && pushTimer){ clearTimeout(pushTimer); pushTimer=null; push(); } else if(!document.hidden) pull(); });
+// Read every copy on ntfy (scheduled and recently delivered) and merge it into this device.
+async function merge(t){
+  const txt = await (await fetch(`${bankUrl(t)}/json?poll=1&since=all&scheduled=1`, {cache:'no-store'})).text();
+  let changed=false, behind=false, due=0; const seen = {};
+  for(const line of txt.split('\n').filter(Boolean)){
+    let m; try{ m = JSON.parse(line); }catch(e){ continue; } if(m.event!='message' || !m.message) continue;
+    let d; try{ d = await unpack(m.message); }catch(e){ continue; }
+    due = Math.max(due, (m.time||0)*1000);
+    if(d.dep && (d.dep.at||0) > (dep.at||0)){ dep = d.dep; LS.set('deposits', dep); changed = true; } else if(d.dep && (dep.at||0) > (d.dep.at||0)) behind = true;
+    for(const [k,v] of Object.entries(d.bank||{})){ seen[k] = true; if(!bank[k] || (v.at||0) > (bank[k].at||0)){ bank[k] = v; changed = true; } else if((bank[k].at||0) > (v.at||0)) behind = true; }
+  }
+  for(const k of Object.keys(bank)) if(!seen[k]) behind = true;
+  if(changed){ LS.set('bankroll', bank); render(); fill(); fillDep(); }
+  return {changed, behind, due};
+}
+let pushing = null;
 async function push(){
   pushTimer = null; const t = topic(); if(!t) return;
-  const cutoff = new Date(Date.now()-90*86400e3).toISOString().slice(0,10); // last 90 days keeps the message small
-  const recent = Object.fromEntries(Object.entries(bank).filter(([k])=>k>=cutoff));
-  try{
-    const r = await fetch(`https://ntfy.sh/${encodeURIComponent(t+'-bank')}?priority=1`, {method:'POST', body: await pack({v:1, bank:recent, dep})});
-    if(r.ok){ LS.set('bankPushedAt', Date.now()); status(`Synced with your other devices at ${new Date().toLocaleTimeString('en-US',{timeZone:TZ,hour:'numeric',minute:'2-digit'})}.`); }
-    else status(r.status==429 ? 'ntfy is limiting messages right now; will try again later.' : `Sync failed (ntfy ${r.status}).`);
-  }catch(e){ status('Sync failed: '+e.message); }
+  if(pushing) return pushing;
+  pushing = (async()=>{
+    try{
+      try{ await merge(t); }catch(e){} // pick up another device's latest first, so posting never drops its days
+      let keep = Object.entries(bank).sort((a,b)=>a[0]<b[0]?1:-1), body;
+      // ntfy messages over 4 KB become short-lived attachments, so drop the oldest days from the shared copy if needed
+      // (every device still keeps its full history).
+      while(true){ body = await pack({v:2, bank:Object.fromEntries(keep), dep}); if(body.length <= 3900 || keep.length <= 1) break; keep = keep.slice(0, Math.floor(keep.length*0.9)); }
+      const r = await fetch(`${bankUrl(t)}/bank?priority=1&at=${Math.floor(Date.now()/1000)+HOLD}`, {method:'POST', body, keepalive:true});
+      if(r.ok){ LS.set('bankPushedAt', Date.now()); status(`Synced with your other devices at ${new Date().toLocaleTimeString('en-US',{timeZone:TZ,hour:'numeric',minute:'2-digit'})}.`); }
+      else status(r.status==429 ? 'ntfy is limiting messages right now; will try again later.' : `Sync failed (ntfy ${r.status}).`);
+    }catch(e){ status('Sync failed: '+e.message); }
+    finally{ pushing = null; }
+  })();
+  return pushing;
 }
 async function pull(){
   const t = topic(); if(!t){ status('Set your ntfy topic on the Slate Locks tab (⚙) to sync this between devices.'); return; }
   try{
-    const txt = await (await fetch(`https://ntfy.sh/${encodeURIComponent(t+'-bank')}/json?poll=1&since=24h`)).text();
-    let changed=false, behind=false; const seen = {};
-    for(const line of txt.split('\n').filter(Boolean)){
-      let m; try{ m = JSON.parse(line); }catch(e){ continue; } if(m.event!='message' || !m.message) continue;
-      let d; try{ d = await unpack(m.message); }catch(e){ continue; }
-      if(d.dep && (d.dep.at||0) > (dep.at||0)){ dep = d.dep; LS.set('deposits', dep); changed = true; } else if(d.dep && (dep.at||0) > (d.dep.at||0)) behind = true;
-      for(const [k,v] of Object.entries(d.bank||{})){ seen[k] = true; if(!bank[k] || (v.at||0) > (bank[k].at||0)){ bank[k] = v; changed = true; } else if((bank[k].at||0) > (v.at||0)) behind = true; }
-    }
-    for(const k of Object.keys(bank)) if(!seen[k]) behind = true;
-    if(changed){ LS.set('bankroll', bank); render(); fill(); fillDep(); }
-    if((behind && Object.keys(bank).length) || Date.now()-LS.get('bankPushedAt',0) > 6*3600e3 && Object.keys(bank).length) await push();
-    else status(changed ? 'Updated from your other device.' : 'Up to date.');
+    const {changed, behind, due} = await merge(t), have = Object.keys(bank).length || (dep.at||0) > 1;
+    if(have && (behind || due < Date.now()+REFRESH)) await push();
+    else status(changed ? 'Updated from your other device.' : have ? 'Up to date.' : 'Nothing saved on any device yet.');
   }catch(e){ status('Sync check failed: '+e.message); }
 }
 // ---------- profit chart (inline SVG, one $ axis: profit vs deposits for Total, DK, FD) ----------
