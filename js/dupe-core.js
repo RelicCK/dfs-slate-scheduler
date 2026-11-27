@@ -437,6 +437,100 @@ function setMetrics(A, set){
     roi, payoutTotal, cost, scoreMismatch: valid.filter(r=>r.scoreDiff!==null && Math.abs(r.scoreDiff)>0.051).length,
     projMismatch: valid.filter(r=>r.projDiff!==null && Math.abs(r.projDiff)>0.06).length};
 }
+// ---------- theoretical entries (DraftKings "edit entries" export) ----------
+/* Entry ID, Contest Name, Contest ID, Entry Fee, then one column per roster slot (CPT, FLEX x5 for showdown)
+   holding DK player IDs. The same file carries DK's player table further right
+   (Position, Name + ID, Name, ID, Roster Position, ...), which is the only ID -> name map used.
+   Blank lineups (reservations) are kept and reported, never scored. */
+function parseEntriesFile(text, fileName){
+  const rows = parseCSV(text); if(rows.length<2) throw new Error('No entry rows found.');
+  const h = rows[0].map(x=>x.trim());
+  const iId = findCol(h,['Entry ID','EntryId']), iCN = findCol(h,['Contest Name']), iCI = findCol(h,['Contest ID']), iFee = findCol(h,['Entry Fee']);
+  if(iId<0 || iCI<0) throw new Error('Need Entry ID and Contest ID columns (the DraftKings entries export).');
+  const slotCols = []; for(let j=Math.max(iId,iCN,iCI,iFee)+1; j<h.length && h[j] && !/^instructions$/i.test(h[j]); j++) slotCols.push(j);
+  if(!slotCols.length) throw new Error('No roster columns (CPT, FLEX, ...) found after Entry Fee.');
+  const idName = new Map(), idRole = new Map();
+  for(const r of rows) for(let i=0;i<r.length-2;i++){ const m = /^(.+) \((\d+)\)$/.exec(String(r[i]).trim());
+    if(m && String(r[i+2]).trim()===m[2]){ idName.set(m[2], String(r[i+1]).trim() || m[1]); if(r[i+3]) idRole.set(m[2], String(r[i+3]).trim().toUpperCase()); } }
+  const out = [], contests = new Map();
+  for(let ri=1; ri<rows.length; ri++){
+    const r = rows[ri], entryId = String(r[iId]||'').trim(); if(!/^\d+$/.test(entryId)) continue;
+    const e = {line: ri+1, entryId, contestName: iCN>=0 ? String(r[iCN]||'').trim() : '', contestId: String(r[iCI]||'').trim(), fee: iFee>=0 ? num(r[iFee]) : null,
+      ids: slotCols.map(j=>String(r[j]||'').trim()), roles: slotCols.map(j=>h[j].toUpperCase())};
+    if(e.ids.every(x=>!x)) e.invalid = 'no lineup (reservation)';
+    else if(e.ids.some(x=>!x)) e.invalid = 'incomplete lineup';
+    else { const miss = e.ids.filter(x=>!idName.has(x)); if(miss.length) e.invalid = 'player ID '+miss.join(', ')+' not in the file\'s player list';
+      else e.slots = e.ids.map((id,k)=>({role: e.roles[k]==='CAPTAIN' ? 'CPT' : e.roles[k], name: idName.get(id), id})); }
+    out.push(e);
+    const c = contests.get(e.contestId) || {id:e.contestId, name:e.contestName, fee:e.fee, count:0, lineups:0}; c.count++; if(e.slots) c.lineups++; contests.set(e.contestId, c);
+  }
+  if(!out.length) throw new Error('No entry rows found.');
+  return {kind:'entries', fileName: fileName||'', header: h, rows: out, contests: [...contests.values()], idName, idRole, players: idName.size};
+}
+/* Score theoretical entries as if they had been entered in this contest.
+   - Each theoretical entry takes the place of the real entry with the same Entry ID (if that entry is in the standings);
+     the other theoretical lineups are in the field together, the same way real entries are.
+   - Dupes = other entries (field after replacement + other theoretical entries) holding the same lineup, i.e. times played - 1.
+   - Points: the contest's score for that exact lineup if anyone played it, else the player results in the standings
+     (CPT = the CPT row, or 1.5 x FLEX if nobody captained him). A player nobody drafted has no result: scored 0 and counted.
+   - Ranks: competition ranking among the field after replacement. Payouts: the contest's estimated table, ties split evenly.
+   rows: parsed entries rows (already filtered to one contest). */
+function theoreticalMetrics(A, rows){
+  const all = rows, use = rows.filter(r=>r.slots);
+  const sig = A.std.signature, idSet = new Set(all.map(r=>r.entryId));
+  const replaced = A.std.entries.filter(e=>idSet.has(String(e.id)));
+  const replacedById = new Map(replaced.map(e=>[String(e.id), e]));
+  const valid = [], invalid = all.filter(r=>!r.slots).map(r=>({r, why:r.invalid}));
+  for(const r of use){ if(sig && signature(r.slots)!==sig){ invalid.push({r, why:'roster slots ('+signature(r.slots)+') don\'t match the contest ('+sig+')'}); continue; } valid.push(r); }
+  // field after replacement
+  const repCount = new Map(); for(const e of replaced) if(e.key) repCount.set(e.key, (repCount.get(e.key)||0)+1);
+  const tk = new Map(), missing = new Set();
+  const score = slots => { let t = 0, miss = 0;
+    for(const s of slots){ const n = normName(s.name), c = roleClass(s.role);
+      let v = null;
+      if(c==='CPT'){ const hit = A.results.get(n+'|CPT'); if(hit && hit.fpts!==null) v = hit.fpts; else { const fx = A.results.get(n+'|FLEX'); if(fx && fx.fpts!==null) v = Math.round(fx.fpts*1.5*100)/100; } }
+      else { const hit = A.results.get(n+'|'+c); if(hit && hit.fpts!==null) v = hit.fpts; }
+      if(v===null){ miss++; missing.add(s.name); v = 0; }
+      t += v; }
+    return {t: Math.round(t*100)/100, miss}; };
+  const items = valid.map(r=>{ const key = lineupKey(r.slots, nameId); tk.set(key, (tk.get(key)||0)+1);
+    const g = A.groups.get(key); let points, src, miss = 0;
+    if(g && g.points!==null){ points = g.points; src = 'contest standings'; }
+    else { const sc = score(r.slots); points = sc.t; miss = sc.miss; src = miss ? 'player results ('+miss+' assumed 0)' : 'player results'; }
+    return {r, key, g, points, src, miss}; });
+  const keptPts = A.std.entries.filter(e=>!idSet.has(String(e.id))).map(e=>e.points).filter(v=>v!==null && Number.isFinite(v));
+  const desc = sortedDesc(keptPts.concat(items.map(x=>x.points)));
+  const N = A.std.entries.length - replaced.length + items.length;
+  const top1Cut = Math.floor(N*0.01), top01Cut = Math.floor(N*0.001);
+  const outRows = items.map(x=>{
+    const fieldTimes = x.g ? x.g.count - (repCount.get(x.key)||0) : 0;
+    const times = fieldTimes + tk.get(x.key), proj = A.lineupProj(x.r.slots);
+    const fb = proj!==null ? A.bestAtOrBelow(times) : null, rank = rankFor(x.points, desc);
+    const actual = replacedById.get(x.r.entryId) || null;
+    return {entryId: x.r.entryId, slots: x.r.slots, key: x.key, cap: x.r.slots.filter(s=>roleClass(s.role)!=='FLEX').map(s=>s.name),
+      flex: x.r.slots.filter(s=>roleClass(s.role)==='FLEX').map(s=>s.name).sort((a,b)=>a.localeCompare(b)),
+      times, dupes: times-1, fieldDupes: fieldTimes, selfDupes: tk.get(x.key)-1, inField: !!x.g, points: x.points, scoreSrc: x.src, proj,
+      contestLoss: proj!==null && A.ceiling!==null ? A.ceiling-proj : null, fieldBest: fb, gap: fb && proj!==null ? fb.proj-proj : null,
+      rank, top1: rank!==null ? rank<=top1Cut : null, top01: rank!==null ? rank<=top01Cut : null,
+      payout: A.table ? payoutFor(x.points, desc, A.table, false) : null,
+      actual, sameAsActual: actual ? actual.key===x.key : null};
+  });
+  const withProj = outRows.filter(r=>r.proj!==null), known = outRows.filter(r=>r.rank!==null);
+  const myMax = withProj.length ? Math.max(...withProj.map(r=>r.proj)) : null;
+  const distinct = new Map(); for(const r of outRows) if(!distinct.has(r.key)) distinct.set(r.key, r);
+  let roi = null, payoutTotal = null, cost = null;
+  if(A.table && A.fee && outRows.length && outRows.every(r=>r.payout!==null)){ payoutTotal = outRows.reduce((s,r)=>s+r.payout,0); cost = outRows.length*A.fee; roi = (payoutTotal/cost-1)*100; }
+  return {rows: outRows, n: outRows.length, invalid, invalidCount: invalid.length, distinct: distinct.size,
+    dupes: dupeStats(outRows.map(r=>r.dupes)), dupesDistinct: dupeStats([...distinct.values()].map(r=>r.dupes)), fieldDupes: dupeStats(outRows.map(r=>r.fieldDupes)),
+    myMax, avgProj: mean(withProj.map(r=>r.proj)), projCoverage: withProj.length, avgPoints: mean(outRows.map(r=>r.points)),
+    avgContestLoss: mean(outRows.map(r=>r.contestLoss)), avgGap: mean(outRows.map(r=>r.gap)),
+    top1: known.length ? known.filter(r=>r.top1).length/known.length*100 : null, top1n: known.filter(r=>r.top1).length,
+    top01: known.length ? known.filter(r=>r.top01).length/known.length*100 : null, top01n: known.filter(r=>r.top01).length, rankedN: known.length,
+    bestRank: known.length ? Math.min(...known.map(r=>r.rank)) : null, cashed: outRows.filter(r=>r.payout>0).length,
+    roi, payoutTotal, cost, fieldSizeIfEntered: N, replaced, replacedN: replaced.length, same: outRows.filter(r=>r.sameAsActual).length,
+    missingPlayers: [...missing], assumedZero: outRows.filter(r=>/assumed 0/.test(r.scoreSrc)).length};
+}
+
 // set overlap on exact canonical ID keys
 function overlap(a, b){
   const A = new Set(a.rows.filter(r=>!r.invalid).map(r=>r.idKey)), B = new Set(b.rows.filter(r=>!r.invalid).map(r=>r.idKey));
@@ -492,6 +586,6 @@ function paired(aByContest, bByContest){
 const api = {CALC_VERSION, parseCSV, toCSV, num, normName, baseUser, hashStr, percentile, mean, sd, dupeStats,
   parseLineupString, lineupKey, roleClass, signature, formatFromSignature, parseStandings, parseProjections, matchProjections,
   parseLineupSet, payoutTable, payoutFor, rankFor, sortedDesc, analyzeContest, userEntries, userAllEntries, portfolioMetrics,
-  resolveSetRow, evalSetRow, setMetrics, overlap, calibration, altIndex, alternativesFor, paired};
+  resolveSetRow, evalSetRow, setMetrics, parseEntriesFile, theoreticalMetrics, overlap, calibration, altIndex, alternativesFor, paired};
 if(typeof module!=='undefined' && module.exports) module.exports = api; else root.DupeCore = api;
 })(typeof window!=='undefined' ? window : globalThis);
