@@ -696,8 +696,9 @@ async function loadHistory(){
   histCache = list;
   list.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')) || b.savedAt-a.savedAt);
   const stale = list.filter(c=>!c.summary || c.summary.calcVersion!==C.CALC_VERSION || String(c.summary.trackedUsers)!==String(trackedList())).length;
-  let h = `<div class="card"><div class="row" style="justify-content:space-between"><div><h3 style="margin:0">History</h3><div class="note" style="margin:0">Stored in this browser (IndexedDB) for ${esc(location.host||'this page')}. Raw files are kept compressed so every metric can be recalculated later. Export a backup now and then; browser storage doesn't move between devices or sites.</div></div>
+  let h = `<div class="card"><div class="row" style="justify-content:space-between"><div><h3 style="margin:0">History</h3><div class="note" style="margin:0">Stored in this browser (IndexedDB) for ${esc(location.host||'this page')}. Raw files are kept compressed so every metric can be recalculated later. Turn on sync below to see it on your other devices; Export backup still works as a spare copy.</div></div>
     <div class="row"><button id="hExp">Export backup</button><button id="hImp">Import / merge</button><button id="hRecalc" ${list.length?'':'disabled'}>Recalculate all</button><input type="file" id="hFile" accept=".json,.gz,application/json,application/gzip" hidden></div></div>
+    <div id="syncBox"></div>
     <div class="msg" id="hMsg">${stale?`<span class="amber">${stale} saved contest${stale==1?'':'s'} were summarised with other tracked players or an older calculation. Recalculate all to refresh them.</span>`:''}</div>
     ${tiles([[int(list.length),'Saved contests'],[int(list.reduce((s,c)=>s+(c.fieldSize||0),0)),'Field entries'],[int(list.reduce((s,c)=>s+(c.sets||[]).length,0)),'Lineup sets'],[int(list.reduce((s,c)=>s+(c.summary?.sets||[]).reduce((z,x)=>z+x.n,0),0)),'Hypothetical lineups'],
       legacy.length && [int(legacy.length),'Imported from old Dupe Checker'], est && [`${(est.usage/1048576).toFixed(1)} MB`,'Storage used']])}</div>`;
@@ -747,6 +748,7 @@ async function loadHistory(){
   return h;
 }
 BIND.history = el => {
+  if(window.DupeSync) DupeSync.mount(el.querySelector('#syncBox'));
   const hm = el.querySelector('#hMsg'), say = (t, bad) => { hm.innerHTML = bad ? `<span class="warn">${t}</span>` : t; };
   el.querySelector('#hExp').onclick = async ()=>{ try{ say('Preparing backup…'); const {blob, counts} = await DB.exportBackup(); const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = `contest-analytics-backup-${new Date().toISOString().slice(0,10)}.json.gz`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
@@ -766,6 +768,12 @@ BIND.history = el => {
   const hb = el.querySelector('#hBase'); if(hb) hb.onchange = ()=>{ LS.set('aHBase', hb.value); renderViewAsync(); };
 };
 async function renderViewAsync(){ if(view!=='history') return renderView(); const el=$('#view'); const h = await loadHistory(); el.innerHTML = h; BIND.history(el); }
+
+// history arrived from another device (dupe-sync.js): pick up tracked players, refresh the History tab
+window.addEventListener('dupesync-applied', e=>{ const d = e.detail || {};
+  if(d.settings && Array.isArray(d.settings.trackedUsers)){ tracked = [...d.settings.trackedUsers,'','','','','',''].slice(0,6); if(!tracked[0]) tracked[0]='relicck'; LS.set('aTracked', tracked); renderTracked(); }
+  if(S.historyId && (d.drop||[]).includes(S.historyId)){ S.historyId = null; renderFiles(); }
+  if(view==='history') renderViewAsync(); else if(d.settings) render(); });
 
 // ---------- start ----------
 renderTracked(); metaToInputs();

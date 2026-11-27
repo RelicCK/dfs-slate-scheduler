@@ -15,6 +15,7 @@ Post-contest duplication and strategy analytics (the former DFS Dupe Checker), l
 - `js/dupe-core.js`: calculations (no DOM). Definitions and conventions are documented at the top of the file.
 - `js/dupe-db.js`: IndexedDB history (`dfsContestAnalytics`), schema migrations, gzip JSON backup/restore, import of old Dupe Checker backups.
 - `js/analytics-ui.js`: the page.
+- `js/dupe-sync.js`: optional History sync between devices through a private GitHub repo of yours (fine-grained token, Contents read/write, stored only in the browser). Index at `history/index.json.gz`, raw files at `history/src/<hash>.bin`; deletions sync too.
 - `node tests/run-tests.js [fixture-dir]`: spec acceptance checks; with a fixture folder it also checks the real contest files (kept out of this public repo).
 
-Everything runs in the browser; uploaded files and history stay on the device unless you export a backup.
+Everything runs in the browser; uploaded files and history stay on the device unless you export a backup or turn on sync (which writes only to your own private repo).
