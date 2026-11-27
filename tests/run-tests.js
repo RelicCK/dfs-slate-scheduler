@@ -98,5 +98,24 @@ if(dir){
   t('set: no CPT/FLEX sum (role separation)', sm.rows.every(r=>!r.res.names || r.res.names.length===6));
   console.log(`      relicck avg dupes ${C.dupeStats(me.map(e=>A.groups.get(e.key).count-1)).avg.toFixed(2)}, set avg dupes ${sm.dupes.avg.toFixed(2)}, set unique ${sm.dupes.unique.toFixed(1)}%`);
 }
+console.log('History sync merge');
+{ require('../js/dupe-db.js'); const PM = globalThis.DupeDB.planMerge;
+  const c = (id, t, extra={}) => ({id, updatedAt:t, sources:{standings:'std-'+id}, ...extra});
+  let p = PM({contests:[c('a',5)], legacy:[], deleted:{}}, {contests:[c('a',4), c('b',3)], legacy:[], deleted:{}});
+  t('new remote contest taken, older remote copy ignored', p.take.length===1 && p.take[0].id==='b' && !p.drop.length);
+  p = PM({contests:[c('a',5)], deleted:{}}, {contests:[c('a',9)], deleted:{}});
+  t('newer remote copy replaces local', p.take.length===1 && p.take[0].updatedAt===9);
+  p = PM({contests:[c('a',5)], deleted:{}}, {contests:[], deleted:{a:7}});
+  t('remote deletion after local save removes it here', p.drop.join()==='a' && p.deleted.a===7);
+  p = PM({contests:[c('a',8)], deleted:{}}, {contests:[], deleted:{a:7}});
+  t('re-saved after the deletion: kept', !p.drop.length);
+  p = PM({contests:[], deleted:{a:7}}, {contests:[c('a',6)], deleted:{}});
+  t('deleted here: an older remote copy does not come back', !p.take.length && p.deleted.a===7);
+  p = PM({contests:[], legacy:[], deleted:{}, settings:{updatedAt:1, trackedUsers:['x']}}, {contests:[], legacy:[{id:'LEGACY|1'}], deleted:{}, settings:{updatedAt:2, trackedUsers:['relicck','y']}});
+  t('legacy records and newer tracked players taken', p.takeLegacy.length===1 && p.settings.trackedUsers[1]==='y');
+  p = PM({contests:[c('a',5)], legacy:[], deleted:{}}, {contests:[c('a',5)], legacy:[], deleted:{}});
+  t('identical copies: nothing to do', !p.any && !p.delChanged);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
