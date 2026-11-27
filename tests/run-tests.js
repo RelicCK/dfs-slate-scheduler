@@ -37,6 +37,28 @@ t('repeated entry IDs counted once', (()=>{ const s = C.parseStandings('EntryId,
 const ds = C.dupeStats([0,0,1,2,3,4,5,6,7,8]);
 t('nearest-rank percentiles', ds.median===3 && ds.p90===7 && ds.p75===6 && ds.unique===20 && ds.le1===30 && ds.le4===60, ds);
 
+console.log('Theoretical entries');
+{
+  // field: 3 entries; u0 and u1 hold the same lineup; relicck (entry 1002) is replaced by a theoretical lineup
+  const tstd = contest([['CPT A FLEX B FLEX C','u0',30], ['CPT A FLEX B FLEX C','u1',30], ['CPT B FLEX A FLEX C','relicck',20]],
+    [['','','','','','','','A','CPT',50,15], ['','','','','','','','A','FLEX',50,10], ['','','','','','','','B','FLEX',50,8], ['','','','','','','','C','FLEX',50,12], ['','','','','','','','B','CPT',50,12]]);
+  const TA = C.analyzeContest(tstd, null, {fee:10, rakePct:0});
+  const ent = C.parseEntriesFile(C.toCSV([['Entry ID','Contest Name','Contest ID','Entry Fee','CPT','FLEX','FLEX','','Instructions','Position','Name + ID','Name','ID','Roster Position'],
+    ['1002','Test','1','$10','11','2','3','','','X','A (11)','A','11','CPT'], ['9999','Test','1','$10','12','1','3','','','X','A (1)','A','1','FLEX'], ['9998','Test','1','$10','','','','','','X','B (2)','B','2','FLEX'],
+    ['','','','','','','','','','X','C (3)','C','3','FLEX'], ['9997','Test','1','$10','13','1','2','','','X','B (12)','B','12','CPT'], ['','','','','','','','','','X','C (13)','C','13','CPT']]), 'DKEntries.csv');
+  t('entries file: IDs mapped through its own player list', ent.idName.get('11')==='A' && ent.idName.get('12')==='B' && ent.rows[0].slots.map(s=>s.name).join()==='A,B,C');
+  t('entries file: reservation row kept as invalid', ent.rows[2].invalid && !ent.rows[2].slots);
+  const tm = C.theoreticalMetrics(TA, ent.rows);
+  const r0 = tm.rows.find(r=>r.entryId==='1002'), r1 = tm.rows.find(r=>r.entryId==='9999');
+  t('replaces the real entry with the same Entry ID', tm.replacedN===1 && tm.fieldSizeIfEntered===5, [tm.replacedN, tm.fieldSizeIfEntered]);
+  t('dupes counted against the field after replacement', r0.dupes===2 && r1.dupes===0, [r0.dupes, r1.dupes]);
+  const r2 = tm.rows.find(r=>r.entryId==='9997');
+  t('played lineup takes the contest score', r1.points===20 && r1.scoreSrc==='contest standings', r1.points);
+  t('unplayed lineup scored from player results (CPT = 1.5x FLEX when nobody captained him)', r2.points===18+10+8 && r2.rank===1 && r2.dupes===0, r2);
+  t('only paid place goes to the top theoretical score; prize pool stays the real field\'s', near(r2.payout, 30) && r0.rank===2 && r0.payout===0, [r2.payout, r0.rank]);
+  t('lineup you actually played flagged', r0.sameAsActual===false && r1.actual===null);
+}
+
 console.log('Projection');
 const p3 = C.parseProjections('Name,DFS ID,FLEX Proj,CPT Proj\nA,1,10,15\nB,2,10,15\nC,3,8,12', 'p.csv');
 const s3 = C.parseStandings('EntryId,EntryName,Points,Lineup\n1,a,5,CPT A FLEX B FLEX C', 'x');

@@ -21,7 +21,7 @@ const STRATS = ['', 'P90 Spread', 'ROI dupe mitigation', 'Top 1% (no mitigation)
 function slotDefault(i){ const d = LS.get('aSlot'+i, {}); return {name: d.name || 'Set '+LETTERS[i], strategy: d.strategy || '', mitigation: d.mitigation ?? null, version: d.version || '', text:null, fileName:'', parsed:null, error:''}; }
 const S = {stdText:null, stdFile:'', std:null, projText:null, projFile:'', proj:null, sets: Array.from({length:10}, (_,i)=>slotDefault(i)),
   overrides:{}, winnings:{}, meta:{site:'DK', sport:'', date:'', name:'', contestId:'', fee:null, prizePool:null, rakePct:null},
-  A:null, setRes:[], historyId:null, legacy:false};
+  A:null, setRes:[], historyId:null, legacy:false, theo:{text:null, fileName:'', parsed:null, contest:null, error:''}, theoRes:null};
 let view = LS.get('aView','overview');
 const sortState = {};
 let tracked = LS.get('aTracked', null) || ['relicck','','','','',''];
@@ -58,6 +58,7 @@ function renderFiles(){
   const set = (id, name, sub) => { const el=$(id); el.classList.toggle('ok', !!name); const fn=el.querySelector('.fn'); fn.textContent = name || sub; fn.title = name || ''; fn.classList.toggle('muted', !name); };
   set('#uStd', S.stdFile, 'CSV or ZIP from DraftKings');
   set('#uProj', S.projFile, 'Name, DFS ID, FLEX/CPT Proj, Own');
+  set('#uTheo', S.theo.fileName && S.theo.parsed ? S.theo.fileName : '', 'DK entries CSV (what-if lineups)');
   $('#saveBtn').disabled = !S.std || S.legacy;
   $('#saveBtn').textContent = S.historyId ? 'Update in history' : 'Save to history';
   payNote();
@@ -86,6 +87,7 @@ async function readAny(file){ if(/\.zip$/i.test(file.name)){ const z = await unz
 function kindOf(text){
   const h = (C.parseCSV(text.slice(0, 4000))[0]||[]).map(x=>x.trim().toUpperCase());
   if(h.includes('LINEUP') && (h.includes('ENTRYID') || h.includes('ENTRYNAME'))) return 'std';
+  if(h.includes('ENTRY ID') && h.includes('CONTEST ID')) return 'theo';
   if(h.includes('CPT') && h.includes('FLEX')) return 'set';
   if(h.includes('FLEX PROJ') || h.includes('DFS ID') || (h.includes('NAME') && h.some(x=>/PROJ/.test(x)))) return 'proj';
   return null;
@@ -98,8 +100,9 @@ async function handleFiles(files, forced){
       const kind = forced || kindOf(text);
       if(kind==='std') await loadStandings(text, name);
       else if(kind==='proj') loadProjections(text, name);
+      else if(kind==='theo'){ loadTheo(text, name); if(S.theo.error) msg(`<span class="warn">${esc(name)}: ${esc(S.theo.error)}</span>`); else { view='theo'; LS.set('aView', view); } }
       else if(kind==='set'){ const i = S.sets.findIndex(s=>!s.parsed); if(i<0){ msg('<span class="warn">All 10 lineup-set slots are full. Clear one first.</span>'); continue; } loadSet(i, text, name); }
-      else msg(`<span class="warn">${esc(name)}: not a standings, projections or lineup-set CSV.</span>`);
+      else msg(`<span class="warn">${esc(name)}: not a standings, projections, entries or lineup-set CSV.</span>`);
     }catch(e){ console.error(e); msg(`<span class="warn">${esc(file.name)}: ${esc(e.message)}</span>`); }
   }
   recompute(); render();
@@ -131,6 +134,18 @@ function loadSet(i, text, name){
   catch(e){ s.parsed = null; s.error = e.message; }
   s.text = s.parsed ? text : null; s.fileName = name;
 }
+function loadTheo(text, name){
+  try{ const parsed = C.parseEntriesFile(text, name); Object.assign(S.theo, {text, fileName:name, parsed, contest:null, error:''}); }
+  catch(e){ Object.assign(S.theo, {text:null, fileName:name, parsed:null, contest:null, error:e.message}); }
+}
+// contest in the entries file to score: the person's pick, else the loaded contest, else the one with the most lineups
+function theoContest(){
+  const P = S.theo.parsed; if(!P) return null;
+  const cs = P.contests, has = id => cs.some(c=>c.id===id);
+  if(S.theo.contest!==null && (S.theo.contest==='*' || has(S.theo.contest))) return S.theo.contest;
+  if(S.meta.contestId && has(S.meta.contestId)) return S.meta.contestId;
+  return [...cs].sort((a,b)=>b.lineups-a.lineups)[0]?.id ?? null;
+}
 function schedulerMeta(cid){
   try{ const cm = LS.get('contestMeta', {}); if(cm[cid]) return cm[cid]; }catch(e){}
   try{ for(const s of Object.values(LS.get('slates', {}))) for(const c of s.contests||[]) if(String(c.id)===String(cid)) return {name:c.name, fee:c.fee, sport:s.sport, site:s.site, date:s.date}; }catch(e){}
@@ -139,24 +154,29 @@ function schedulerMeta(cid){
 const contestKey = () => (S.meta.site||'DK')+'|'+(S.meta.contestId || (S.std ? 'h'+C.hashStr(S.std.entries.map(e=>e.id).join(',')) : ''));
 
 // file pickers and drop
-document.addEventListener('click', e=>{ const b = e.target.closest('[data-pick]'); if(!b) return; ({std:$('#fStd'), proj:$('#fProj')})[b.dataset.pick].click(); });
+document.addEventListener('click', e=>{ const b = e.target.closest('[data-pick]'); if(!b) return; ({std:$('#fStd'), proj:$('#fProj'), theo:$('#fTheo')})[b.dataset.pick].click(); });
 $('#fStd').onchange = e=>{ handleFiles([...e.target.files], 'std'); e.target.value=''; };
 $('#fProj').onchange = e=>{ handleFiles([...e.target.files], 'proj'); e.target.value=''; };
+$('#fTheo').onchange = e=>{ handleFiles([...e.target.files], 'theo'); e.target.value=''; };
 document.body.addEventListener('dragover', e=>{ e.preventDefault(); document.body.classList.add('over'); });
 document.body.addEventListener('dragleave', e=>{ if(!e.relatedTarget) document.body.classList.remove('over'); });
 document.body.addEventListener('drop', e=>{ e.preventDefault(); document.body.classList.remove('over'); const fs=[...e.dataTransfer.files];
   const slot = e.target.closest('[data-slot]'); if(slot && fs.length===1){ readAny(fs[0]).then(({name,text})=>{ loadSet(+slot.dataset.slot, text, name); recompute(); render(); }); return; }
   handleFiles(fs); });
-$('#clearAll').onclick = ()=>{ Object.assign(S, {stdText:null, stdFile:'', std:null, projText:null, projFile:'', proj:null, overrides:{}, winnings:{}, historyId:null, legacy:false, A:null, setRes:[]});
+$('#clearAll').onclick = ()=>{ Object.assign(S, {stdText:null, stdFile:'', std:null, projText:null, projFile:'', proj:null, overrides:{}, winnings:{}, historyId:null, legacy:false, A:null, setRes:[], theo:{text:null, fileName:'', parsed:null, contest:null, error:''}, theoRes:null});
   S.sets = S.sets.map((s,i)=>slotDefault(i)); S.meta = {site:'DK', sport:'', date:'', name:'', contestId:'', fee:null, prizePool:null, rakePct:null}; LS.set('aOpen', null);
   metaToInputs(); msg(''); recompute(); render(); };
 
 // ---------- compute ----------
 function recompute(){
-  if(!S.std){ S.A=null; S.setRes=[]; return; }
+  if(!S.std){ S.A=null; S.setRes=[]; S.theoRes=null; return; }
+  // entry fee from the entries file when the contest has none yet
+  if(S.theo.parsed && !ok(S.meta.fee) && S.meta.contestId){ const c = S.theo.parsed.contests.find(c=>c.id===S.meta.contestId); if(c && ok(c.fee)){ S.meta.fee = c.fee; if(!S.meta.name) S.meta.name = c.name; metaToInputs(); } }
   const t0 = performance.now();
   S.A = C.analyzeContest(S.std, S.proj, {fee:S.meta.fee, prizePool:S.meta.prizePool, rakePct:rakeOf(S.meta), overrides:S.overrides});
   S.setRes = S.sets.map(s=>s.parsed ? C.setMetrics(S.A, s.parsed) : null);
+  const tc = theoContest();
+  S.theoRes = S.theo.parsed && tc!==null ? C.theoreticalMetrics(S.A, S.theo.parsed.rows.filter(r=>tc==='*' || r.contestId===tc)) : null;
   S.userCache = new Map();
   const ms = Math.round(performance.now()-t0);
   status(`${S.meta.site} ${S.meta.sport||''} ${S.std.format} · ${S.meta.name || (S.meta.contestId ? 'contest '+S.meta.contestId : S.stdFile)} · ${int(S.A.fieldSize)} entries${S.historyId?' · in history':''}${S.legacy?' · legacy record (read-only)':''}`.replace(/\s+/g,' '));
@@ -172,6 +192,7 @@ function portfolios(){
   const out = [];
   for(const u of trackedList()){ const m = userMetrics(u); if(m && m.n) out.push({id:'u:'+u, label:u+(u===me()?' (you)':''), kind:'user', u}); }
   S.sets.forEach((s,i)=>{ if(S.setRes[i]) out.push({id:'s:'+i, label:s.name, kind:'set', i}); });
+  if(S.theoRes && S.theoRes.n) out.push({id:'t:', label:'Theoretical entries', kind:'theo'});
   return out;
 }
 const nid = n => C.normName(n);
@@ -182,6 +203,12 @@ function portfolioBuilds(pid){
     const by = new Map();
     for(const r of m.rows){ let b = by.get(r.e.key); if(!b){ b = {key:r.e.key, cap:r.g.cap.join(', '), flex:r.g.flex, capId:nid(r.g.cap[0]||''), flexIds:r.g.flex.map(nid).sort(), proj:r.proj, times:r.times, dupes:r.dupes, entries:0, points:r.points}; by.set(r.e.key,b); } b.entries++; }
     return {builds:[...by.values()], slots: m.rows.map(r=>r.e.slots), n:m.n, hypothetical:false};
+  }
+  if(pid==='t:'){
+    const m = S.theoRes; if(!m) return {builds:[], slots:[], n:0};
+    const by = new Map();
+    for(const r of m.rows){ let b = by.get(r.key); if(!b){ b = {key:r.key, cap:r.cap.join(', '), flex:r.flex, capId:nid(r.cap[0]||''), flexIds:r.flex.map(nid).sort(), proj:r.proj, times:r.times, dupes:r.dupes, entries:0, points:r.points}; by.set(r.key,b); } b.entries++; }
+    return {builds:[...by.values()], slots: m.rows.map(r=>r.slots), n:m.n, hypothetical:true};
   }
   const i = +pid.slice(2), res = S.setRes[i]; if(!res) return {builds:[], slots:[], n:0};
   const by = new Map(), slots = [];
@@ -493,6 +520,65 @@ BIND.projections = el => {
   el.querySelectorAll('[data-ovr]').forEach(s=>s.onchange=()=>{ S.overrides[s.dataset.ovr] = s.value; recompute(); render(); });
   el.querySelectorAll('[data-unovr]').forEach(b=>b.onclick=()=>{ delete S.overrides[b.dataset.unovr]; recompute(); render(); });
 };
+
+// ----- theoretical entries -----
+VIEWS.theo = () => {
+  if(!S.A) return needStd();
+  const T = S.theo, P = T.parsed;
+  const introT = `Upload a DraftKings entries CSV (the "edit entries" export: Entry ID, Contest ID, CPT, FLEX… with DK's player list on the right). Its lineups are scored against the loaded contest <b>as if you had entered them</b>: each one takes the place of your real entry with the same Entry ID, then gets its rank at its real score, its dupes with the field, and its estimated payout (ties split evenly). Nothing here is saved to history.`, intro = `<div class="note" style="margin:0">${introT}</div>`;
+  if(!P) return `<div class="card"><h3>Theoretical entries</h3>${intro}<div class="row" style="margin-top:10px"><button class="primary" data-pick="theo">Choose entries CSV</button>${T.error?`<span class="warn small">${esc(T.fileName)}: ${esc(T.error)}</span>`:''}</div></div>`;
+  const tc = theoContest(), m = S.theoRes, A = S.A;
+  const opts = P.contests.map(c=>`<option value="${esc(c.id)}" ${c.id===tc?'selected':''}>${esc(c.name||c.id)} · ${c.lineups} lineup${c.lineups===1?'':'s'}${c.id===S.meta.contestId?' (this contest)':''}</option>`).join('') + (P.contests.length>1 ? `<option value="*" ${tc==='*'?'selected':''}>All ${P.rows.filter(r=>r.slots).length} lineups in the file</option>` : '');
+  const mismatch = tc!==null && S.meta.contestId && tc!==S.meta.contestId;
+  let h = `<div class="card" style="border-color:var(--amber)"><div class="row" style="justify-content:space-between"><h3 style="margin:0"><span class="pill" style="background:var(--amber);color:#1b1b1b">THEORETICAL</span> ${esc(T.fileName)}</h3><div class="row"><button class="sm" data-pick="theo">Replace</button><button class="sm" id="theoClr">Clear</button></div></div>
+    <div class="row" style="margin-top:8px"><label class="row small" style="min-width:0;max-width:100%;flex-wrap:nowrap">Lineups from <select id="theoC" style="min-width:0;max-width:100%;flex:1">${opts}</select></label></div>
+    ${mismatch ? `<div class="note warn">These lineups were built for a different contest than the standings loaded (${esc(S.meta.contestId)}). They are still scored against this field, but none of them replace real entries.</div>` : ''}
+    <div class="note">${introT}</div></div>`;
+  if(!m || !m.n) return h + `<div class="card empty">No complete lineups to score for this contest.${m && m.invalidCount ? ` ${m.invalidCount} rows skipped: ${esc([...new Set(m.invalid.map(x=>x.why))].join('; '))}.` : ''}</div>`;
+  const fee = A.fee;
+  h += tiles([[int(m.n)+(m.invalidCount?` <span class="small muted">+${m.invalidCount} skipped</span>`:''),'Theoretical entries'],[int(m.distinct),'Distinct builds'],[int(Math.round((m.dupes.unique||0)*m.n/100)),'Unique entries'],
+    [f(m.dupes.avg),'Avg dupes'],[f(m.dupes.median,0),'Median dupes'],[f(m.dupes.p90,0),'P90 dupes'],A.pm && [f(m.avgProj),'Avg projection'],[f(m.avgPoints),'Avg points'],
+    [int(m.bestRank),'Best rank', `of ${int(m.fieldSizeIfEntered)}`],[`${int(m.cashed)}/${int(m.n)}`,'Cashed'],
+    [pc(m.top1),'Top 1%', `${m.top1n} of ${m.rankedN}`],
+    [pc(m.roi),'Est. ROI (theoretical)', A.table ? 'Modeled payouts, as if entered' : 'Enter the entry fee']]);
+  // side by side with the real entries these replace
+  const act = m.replacedN ? C.portfolioMetrics(A, m.replaced.filter(e=>e.slots), m.replaced) : null;
+  if(act){
+    const best = r => r.rank!==null ? r.rank : null;
+    act.bestRank = act.rows.length ? Math.min(...act.rows.map(best).filter(ok)) : null; act.cashed = act.rows.filter(r=>r.payout>0).length;
+    const cmp = [['Entries', x=>x.n, 0, '', 0], ['Distinct builds', x=>x.distinct, 0, '', 0], ['Unique entries', x=>x.dupes.unique, 1, '%', 1], ['≤4 dupes', x=>x.dupes.le4, 1, '%', 1],
+      ['Avg dupes', x=>x.dupes.avg, 2, '', -1], ['Median dupes', x=>x.dupes.median, 0, '', -1], ['P90 dupes', x=>x.dupes.p90, 0, '', -1],
+      ...(A.pm ? [['Avg projection', x=>x.avgProj, 2, '', 1], ['Max projection', x=>x.myMax, 2, '', 1], ['Avg contest loss', x=>x.avgContestLoss, 2, '', -1]] : []),
+      ['Avg points', x=>x.avgPoints, 2, '', 1], ['Best rank', x=>x.bestRank, 0, '', -1], ['Cashed', x=>x.cashed, 0, '', 1], ['Top 1% finishes', x=>x.top1n, 0, '', 1], ['Top 0.1% finishes', x=>x.top01n, 0, '', 1],
+      ['Est. ROI', x=>x.roi, 1, '%', 1], ['Est. payout $', x=>x.payoutTotal, 2, '', 1]];
+    const v = (x,d,sx) => ok(x) ? (d===0 ? int(x) : x.toFixed(d))+sx : '—';
+    h += `<div class="card"><h3>Theoretical vs what you actually entered</h3><div class="tw free cmpw">${(()=>{ const nw = matchMedia('(max-width:600px)').matches, sw = nw?104:170, cw = nw?72:100; return `<table class="cmp" style="width:${sw+3*cw}px"><colgroup><col style="width:${sw}px"><col style="width:${cw}px"><col style="width:${cw}px"><col style="width:${cw}px"></colgroup>`; })()}<thead><tr><th class="st">Stat</th><th class="n me">Theoretical</th><th class="n cv">Actual</th><th class="n cv">Difference</th></tr></thead><tbody>${cmp.map(([l,g,d,sx,dir],i)=>{ const a=g(m), b=g(act), df = ok(a)&&ok(b) ? a-b : null;
+      return `<tr${i%2?' class="z"':''}><td class="st">${l}</td><td class="n me">${v(a,d,sx)}</td><td class="n cv">${v(b,d,sx)}</td><td class="n cv ${!ok(df)||!dir||Math.abs(df)<1e-9?'':df*dir>0?'pos':'neg'}">${ok(df)&&l!=='Entries'&&l!=='Distinct builds' ? (Math.abs(df)<1e-9?'=':(df>0?'+':'−')+(d===0?int(Math.abs(df)):Math.abs(df).toFixed(d))+(sx==='%'?' pp':'')) : ''}</td></tr>`; }).join('')}</tbody></table></div>
+      <div class="note">Actual = your ${int(m.replacedN)} real entries with the same Entry IDs, scored the usual way. ${int(m.same)} of ${int(m.n)} theoretical lineups are the same lineup you actually played in that entry. <span class="pos">Green</span> means the theoretical set did better.</div></div>`;
+  }
+  const notes = [];
+  if(m.invalidCount) notes.push(`${m.invalidCount} rows skipped: ${esc([...new Set(m.invalid.map(x=>x.why))].join('; '))}.`);
+  if(m.missingPlayers.length) notes.push(`No contest result for ${esc(m.missingPlayers.join(', '))} (nobody drafted them), so they score 0 in ${m.assumedZero} lineup${m.assumedZero===1?'':'s'}.`);
+  if(!fee) notes.push('Enter the entry fee above to see payouts and ROI.');
+  const q = (LS.get('aTheoQ','')||'').toLowerCase();
+  const rows = m.rows.filter(r=>!q || (r.cap.join(' ')+' '+r.flex.join(' ')).toLowerCase().includes(q)).map(r=>({...r, capS:r.cap.join(', '), delta: r.proj!==null ? r.points-r.proj : null, actPts: r.actual ? r.actual.points : null}));
+  h += `<div class="card"><div class="row" style="justify-content:space-between"><input type="text" id="theoQ" placeholder="Search players" value="${esc(q)}" style="max-width:260px"><span class="muted small">${int(rows.length)} theoretical entries</span><button class="sm" id="theoCsv">Download CSV</button></div>${notes.length?`<div class="note">${notes.join(' ')}</div>`:''}</div>`;
+  h += table('tTheo', [
+    {k:'times', label:'Played', n:1, f:r=>timesPill(r.times), title:'Times this lineup would appear in the contest, counting itself'}, {k:'dupes', label:'Dupes', n:1, f:r=>r.dupes, title:'Other entries with the same lineup (field + your other theoretical entries)'},
+    {k:'capS', label:'Lineup (CPT · FLEX)', cls:'fx', f:r=>lineupCell(r.capS, r.flex)},
+    {k:'points', label:'Points', n:1}, {k:'rank', label:'Rank', n:1, f:r=>int(r.rank)}, ...(A.pm ? [{k:'proj', label:'Proj', n:1}] : []),
+    {k:'payout', label:'Est. payout', n:1, f:r=>money(r.payout)}, {k:'actPts', label:'Actual entry pts', n:1, title:'Points of the real lineup in this Entry ID'},
+    {k:'sameAsActual', label:'Same as actual', f:r=>r.actual ? (r.sameAsActual ? 'yes' : '') : '<span class="muted tiny">not entered</span>', v:r=>r.sameAsActual?1:0},
+    {k:'entryId', label:'Entry ID', cls:'nw tiny'}], rows, {sort:'rank', dir:1, limit:300});
+  return h;
+};
+BIND.theo = el => {
+  const s = el.querySelector('#theoC'); if(s) s.onchange = ()=>{ S.theo.contest = s.value; recompute(); render(); };
+  const c = el.querySelector('#theoClr'); if(c) c.onclick = ()=>{ S.theo = {text:null, fileName:'', parsed:null, contest:null, error:''}; recompute(); render(); };
+  const q = el.querySelector('#theoQ'); if(q) q.oninput = ()=>{ LS.set('aTheoQ', q.value); const pos=q.selectionStart; renderView(); const n=$('#theoQ'); n.focus(); n.setSelectionRange(pos,pos); };
+  const b = el.querySelector('#theoCsv'); if(b) b.onclick = ()=>{ const m = S.theoRes; if(!m) return;
+    download(`theoretical-lineups-${S.meta.contestId||'contest'}.csv`, [['Entry ID','Times Played If Entered','Dupes (other entries)','Field Dupes','CPT','FLEX','Points','Score Source','Rank','Projection','Est. Payout (theoretical)','Actual Entry Points','Same As Actual'],
+      ...m.rows.map(r=>[r.entryId, r.times, r.dupes, r.fieldDupes, r.cap.join(' | '), r.flex.join(' | '), r.points, r.scoreSrc, r.rank, r.proj, r.payout!==null? +r.payout.toFixed(2):'', r.actual? r.actual.points : '', r.actual ? (r.sameAsActual?'yes':'no') : 'not entered'])]); }; };
 
 // ----- lineup sets -----
 const setLabel = s => s.strategy ? s.strategy + (ok(s.mitigation) ? ` ${s.mitigation}%` : '') : s.name;

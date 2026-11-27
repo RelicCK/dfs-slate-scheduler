@@ -151,9 +151,11 @@ markBankDue(); document.addEventListener('visibilitychange', ()=>{ if(!document.
       <h3>Files <span class="muted tiny" style="font-weight:400">or drop them anywhere</span></h3>
       <div class="upl" id="uStd"><b>Standings</b><span class="fn muted">CSV or ZIP from DraftKings</span><button class="sm" data-pick="std">Choose</button></div>
       <div class="upl" id="uProj"><b>Projections</b><span class="fn muted">Name, DFS ID, FLEX/CPT Proj, Own</span><button class="sm" data-pick="proj">Choose</button></div>
+      <div class="upl" id="uTheo"><b>Theoretical</b><span class="fn muted">DK entries CSV (what-if lineups)</span><button class="sm" data-pick="theo">Choose</button></div>
       <div class="row"><button class="sm" data-tab="sets">Lineup sets (up to 10) →</button><button class="sm" id="clearAll">Clear</button></div>
       <input type="file" id="fStd" accept=".csv,.zip,text/csv,application/zip" hidden>
       <input type="file" id="fProj" accept=".csv,text/csv" hidden>
+      <input type="file" id="fTheo" accept=".csv,text/csv" hidden>
       <input type="file" id="fAny" accept=".csv,.zip" multiple hidden>
     </div>
     <div>
@@ -175,7 +177,7 @@ markBankDue(); document.addEventListener('visibilitychange', ()=>{ if(!document.
   </section>
 
   <nav class="tabs" id="tabs">
-    <button data-tab="overview">Overview</button><button data-tab="mine">My Lineups</button><button data-tab="players">Players</button>
+    <button data-tab="overview">Overview</button><button data-tab="mine">My Lineups</button><button data-tab="theo">Theoretical</button><button data-tab="players">Players</button>
     <button data-tab="explorer">Lineup Explorer</button><button data-tab="tradeoff">Projection vs Uniqueness</button><button data-tab="projections">Projections</button>
     <button data-tab="sets">Lineup Sets</button><button data-tab="compare">Player Comparison</button><button data-tab="history">History</button>
   </nav>
