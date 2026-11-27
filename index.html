@@ -859,7 +859,7 @@ async function applyRemote(payloads, force){
   }
   const m = {changedLocal:false, remoteBehind:false};
   for(const d of payloads){ const r = mergeDone(d.slates||[]); m.changedLocal ||= r.changedLocal; if(d===best) m.remoteBehind ||= r.remoteBehind; }
-  if(m.changedLocal){ save(); render(); syncStatus(`updated checkmarks from your other device at ${nowStr()}.`); }
+  if(m.changedLocal){ save(); render(); syncStatus(`updated checkmarks from your other device at ${nowStr()}.`); rescheduleSoon(); }
   if(haveLocal && (m.remoteBehind || local > (best?.at||0) || force || Date.now()-LS.get('pushedAt',0) > 6*3600e3) && local >= (best?.at||0)) await pushSync(force);
   else if(!m.changedLocal) syncStatus(best || haveLocal ? `up to date (checked ${nowStr()}).` : `nothing shared yet. Open the page on the device that has your slates.`);
 }
@@ -965,7 +965,8 @@ async function checkReplace(topic){
   return ok;
 }
 let schedTimer = null;
-function rescheduleSoon(){ if(!LS.get('autoSchedule', false)) return; clearTimeout(schedTimer); schedTimer = setTimeout(()=>scheduleAlerts(true), 2500); }
+// any device with your topic keeps alerts in step with your marks (alerts carry an ID per lock, so this never duplicates)
+function rescheduleSoon(){ if(!(document.getElementById('topic').value||LS.get('topic','')).trim()) return; clearTimeout(schedTimer); schedTimer = setTimeout(()=>scheduleAlerts(true), 2500); }
 async function scheduleAlerts(auto){
   const topic = document.getElementById('topic').value.trim();
   const num = (id,d) => { const v = parseFloat(document.getElementById(id).value); return isFinite(v) && v>=0 ? v : d; };
